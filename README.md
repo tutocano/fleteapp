@@ -147,6 +147,13 @@ automaticamente usando el conector pluggable (Haversine por defecto).
 Para importar la ruta EJECUTADA correspondiente, usa `POST /api/rutas/importar/ejecutada` con
 el mismo formato, agregando `"ruta_planificada_id": <id de la ruta planificada>`.
 
+### Varias rutas en un solo archivo JSON
+
+`POST /api/rutas/importar-json-lote/planificada` y `.../ejecutada` (multipart, campo `archivo`)
+aceptan un unico archivo `.json` con un **arreglo** de rutas (cada una en el mismo formato de
+arriba) para cargar de un tiron todas las rutas de un dia. Sigue usando IDs internos (a
+diferencia del CSV); ver `backend/ejemplos_json/` para una plantilla.
+
 ## Importacion de rutas (formato CSV, v4.1)
 
 Alternativa al JSON de arriba para cargar de un tiron TODAS las rutas de un dia completo

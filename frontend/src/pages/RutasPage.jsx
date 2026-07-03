@@ -63,6 +63,50 @@ const COLUMNAS_CSV_OPCIONALES = [
   'tiempo_transito_min_tramo', 'hora_llegada_estimada', 'hora_llegada_real', 'peso_kg', 'volumen_m3',
 ]
 
+// Tabla de resultados compartida entre la carga CSV y la carga JSON en lote:
+// misma forma de respuesta en ambos endpoints ({ rutas_importadas, errores_filas, total_ok, total_error }).
+function TablaResultadoLote({ resultado }) {
+  return (
+    <div style={{ marginTop: 12 }}>
+      <p style={{ fontWeight: 600 }}>
+        {resultado.total_ok} ruta(s) importada(s), {resultado.total_error} con error.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Codigo ruta</th>
+            <th>Estado</th>
+            <th>Detalle</th>
+          </tr>
+        </thead>
+        <tbody>
+          {resultado.rutas_importadas.map((r, idx) => (
+            <tr key={idx}>
+              <td>{r.codigo_ruta}</td>
+              <td style={{ color: r.ok ? '#166534' : '#b91c1c', fontWeight: 600 }}>{r.ok ? 'OK' : 'Error'}</td>
+              <td>
+                {r.ok
+                  ? `Ruta ID ${r.ruta_id}, costo $${r.costo_flete_calculado?.toLocaleString()}`
+                  : r.error}
+              </td>
+            </tr>
+          ))}
+          {resultado.errores_filas.map((e, idx) => (
+            <tr key={`err-${idx}`}>
+              <td>{e.codigo_ruta || '-'}</td>
+              <td style={{ color: '#b91c1c', fontWeight: 600 }}>Error de fila</td>
+              <td>
+                {e.fila ? `Fila ${e.fila}: ` : ''}
+                {e.error}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export default function RutasPage() {
   const [rutas, setRutas] = useState([])
   const [loading, setLoading] = useState(true)
@@ -72,9 +116,13 @@ export default function RutasPage() {
   const [mensaje, setMensaje] = useState(null)
   const [rutaExpandidaId, setRutaExpandidaId] = useState(null)
   const [rutaExpandidaDetalle, setRutaExpandidaDetalle] = useState(null)
-  const [archivoCsv, setArchivoCsv] = useState(null)
-  const [resultadoCsv, setResultadoCsv] = useState(null)
-  const [subiendoCsv, setSubiendoCsv] = useState(false)
+  // Estado compartido para la carga de archivo con varias rutas, ya sea CSV
+  // (pestaña CSV) o JSON en lote (dentro de la pestaña JSON). `formatoArchivo`
+  // indica cual de los dos endpoints usar al subir.
+  const [archivoLote, setArchivoLote] = useState(null)
+  const [resultadoLote, setResultadoLote] = useState(null)
+  const [subiendoLote, setSubiendoLote] = useState(false)
+  const [formatoArchivo, setFormatoArchivo] = useState('csv') // 'csv' | 'json'
 
   const load = async () => {
     setLoading(true)
@@ -125,24 +173,28 @@ export default function RutasPage() {
     }
   }
 
-  const handleSubirCsv = async () => {
-    if (!archivoCsv) {
-      setMensaje({ tipo: 'error', texto: 'Selecciona primero un archivo CSV' })
+  const handleSubirLote = async () => {
+    if (!archivoLote) {
+      setMensaje({
+        tipo: 'error',
+        texto: `Selecciona primero un archivo ${formatoArchivo === 'csv' ? 'CSV' : 'JSON'}`,
+      })
       return
     }
     setMensaje(null)
-    setResultadoCsv(null)
-    setSubiendoCsv(true)
+    setResultadoLote(null)
+    setSubiendoLote(true)
     try {
       const formData = new FormData()
-      formData.append('archivo', archivoCsv)
-      const res = await api.post(`/rutas/importar-csv/${tipoImport}`, formData)
-      setResultadoCsv(res.data)
+      formData.append('archivo', archivoLote)
+      const endpoint = formatoArchivo === 'csv' ? 'importar-csv' : 'importar-json-lote'
+      const res = await api.post(`/rutas/${endpoint}/${tipoImport}`, formData)
+      setResultadoLote(res.data)
       await load()
     } catch (e) {
       setMensaje({ tipo: 'error', texto: 'Error: ' + (e.response?.data?.detail || e.message) })
     } finally {
-      setSubiendoCsv(false)
+      setSubiendoLote(false)
     }
   }
 
@@ -207,6 +259,37 @@ export default function RutasPage() {
               correcto para el <code>tipo_camion_id</code> de esta ruta. Si usas una tarifa restringida a un
               camion distinto al de la ruta, la importacion sera rechazada con un error explicativo.
             </p>
+
+            <hr style={{ margin: '16px 0', border: 'none', borderTop: '1px solid #e5e7eb' }} />
+
+            <strong>O sube un archivo JSON con varias rutas</strong>
+            <p style={{ fontSize: 12, color: '#6b7280' }}>
+              Un unico archivo <code>.json</code> con un arreglo de rutas (cada una en el mismo formato de
+              arriba). Util para cargar de un tiron todas las rutas de un dia completo, igual que el CSV,
+              pero manteniendo el formato de IDs internos e incluyendo <code>ruta_planificada_id</code> en
+              cada ruta ejecutada (no se resuelve automaticamente como en el CSV).
+            </p>
+            <input
+              type="file"
+              accept=".json"
+              onChange={(e) => {
+                setFormatoArchivo('json')
+                setArchivoLote(e.target.files?.[0] || null)
+                setResultadoLote(null)
+              }}
+            />{' '}
+            <button
+              className="btn"
+              onClick={() => {
+                setFormatoArchivo('json')
+                handleSubirLote()
+              }}
+              disabled={subiendoLote}
+            >
+              {subiendoLote ? 'Subiendo...' : 'Subir JSON'}
+            </button>
+
+            {formatoArchivo === 'json' && resultadoLote && <TablaResultadoLote resultado={resultadoLote} />}
           </>
         )}
 
@@ -216,12 +299,20 @@ export default function RutasPage() {
               type="file"
               accept=".csv"
               onChange={(e) => {
-                setArchivoCsv(e.target.files?.[0] || null)
-                setResultadoCsv(null)
+                setFormatoArchivo('csv')
+                setArchivoLote(e.target.files?.[0] || null)
+                setResultadoLote(null)
               }}
             />{' '}
-            <button className="btn" onClick={handleSubirCsv} disabled={subiendoCsv}>
-              {subiendoCsv ? 'Subiendo...' : 'Subir CSV'}
+            <button
+              className="btn"
+              onClick={() => {
+                setFormatoArchivo('csv')
+                handleSubirLote()
+              }}
+              disabled={subiendoLote}
+            >
+              {subiendoLote ? 'Subiendo...' : 'Subir CSV'}
             </button>
 
             <p style={{ fontSize: 12, color: '#6b7280', marginTop: 10 }}>
@@ -251,47 +342,7 @@ export default function RutasPage() {
               <p>Descarga ejemplos reales listos para subir en <code>backend/ejemplos_csv/</code>.</p>
             </details>
 
-            {resultadoCsv && (
-              <div style={{ marginTop: 12 }}>
-                <p style={{ fontWeight: 600 }}>
-                  {resultadoCsv.total_ok} ruta(s) importada(s), {resultadoCsv.total_error} con error.
-                </p>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Codigo ruta</th>
-                      <th>Estado</th>
-                      <th>Detalle</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {resultadoCsv.rutas_importadas.map((r, idx) => (
-                      <tr key={idx}>
-                        <td>{r.codigo_ruta}</td>
-                        <td style={{ color: r.ok ? '#166534' : '#b91c1c', fontWeight: 600 }}>
-                          {r.ok ? 'OK' : 'Error'}
-                        </td>
-                        <td>
-                          {r.ok
-                            ? `Ruta ID ${r.ruta_id}, costo $${r.costo_flete_calculado?.toLocaleString()}`
-                            : r.error}
-                        </td>
-                      </tr>
-                    ))}
-                    {resultadoCsv.errores_filas.map((e, idx) => (
-                      <tr key={`err-${idx}`}>
-                        <td>{e.codigo_ruta || '-'}</td>
-                        <td style={{ color: '#b91c1c', fontWeight: 600 }}>Error de fila</td>
-                        <td>
-                          {e.fila ? `Fila ${e.fila}: ` : ''}
-                          {e.error}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {formatoArchivo === 'csv' && resultadoLote && <TablaResultadoLote resultado={resultadoLote} />}
           </>
         )}
 

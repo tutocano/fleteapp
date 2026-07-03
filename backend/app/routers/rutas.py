@@ -1,7 +1,9 @@
+import json
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import ValidationError
 from sqlalchemy.orm import Session, joinedload
 
 from app import auth
@@ -192,23 +194,15 @@ def importar_ruta_ejecutada(
     return _importar_ruta(payload, es_planificada=False, db=db, empresa_id=empresa_id)
 
 
-def _importar_csv(
-    archivo: UploadFile, es_planificada: bool, db: Session, empresa_id: Optional[int]
-) -> dict:
-    if empresa_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Como SUPER_ADMIN, indica ?empresa_id= para saber a que empresa pertenece este archivo",
-        )
-    if archivo.filename and not archivo.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="El archivo debe ser un .csv")
-
-    contenido = archivo.file.read()
-    try:
-        rutas_parseadas, errores_filas = parsear_rutas_csv(contenido, db, empresa_id, es_planificada)
-    except EncabezadoCSVError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
+def _procesar_lote(
+    rutas_parseadas: List[Tuple[str, schemas.RutaImport]],
+    es_planificada: bool,
+    db: Session,
+    empresa_id: int,
+) -> List[dict]:
+    """Importa una lista de (codigo_ruta, RutaImport) ya parseados/validados,
+    reutilizada tanto por la carga CSV como por la carga JSON en lote. Una ruta
+    con error no interrumpe el resto del lote (se hace rollback y se sigue)."""
     resultados = []
     for codigo_ruta, ruta_import in rutas_parseadas:
         try:
@@ -227,14 +221,114 @@ def _importar_csv(
         except Exception as e:  # no dejar que una ruta con error dane el resto del lote
             db.rollback()
             resultados.append({"codigo_ruta": codigo_ruta, "ok": False, "error": str(e)})
+    return resultados
 
-    codigos_con_error_de_fila = {e["codigo_ruta"] for e in errores_filas if e["codigo_ruta"]}
+
+def _resumen_lote(resultados: List[dict], errores_filas: List[dict]) -> dict:
+    codigos_con_error_previo = {e["codigo_ruta"] for e in errores_filas if e["codigo_ruta"]}
     return {
         "rutas_importadas": resultados,
         "errores_filas": errores_filas,
         "total_ok": sum(1 for r in resultados if r["ok"]),
-        "total_error": sum(1 for r in resultados if not r["ok"]) + len(codigos_con_error_de_fila),
+        "total_error": sum(1 for r in resultados if not r["ok"]) + len(codigos_con_error_previo),
     }
+
+
+def _importar_csv(
+    archivo: UploadFile, es_planificada: bool, db: Session, empresa_id: Optional[int]
+) -> dict:
+    if empresa_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Como SUPER_ADMIN, indica ?empresa_id= para saber a que empresa pertenece este archivo",
+        )
+    if archivo.filename and not archivo.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="El archivo debe ser un .csv")
+
+    contenido = archivo.file.read()
+    try:
+        rutas_parseadas, errores_filas = parsear_rutas_csv(contenido, db, empresa_id, es_planificada)
+    except EncabezadoCSVError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    resultados = _procesar_lote(rutas_parseadas, es_planificada, db, empresa_id)
+    return _resumen_lote(resultados, errores_filas)
+
+
+def _importar_json_lote(
+    archivo: UploadFile, es_planificada: bool, db: Session, empresa_id: Optional[int]
+) -> dict:
+    """Carga masiva via un unico archivo .json que contiene una LISTA de rutas
+    (mismo formato de cada ruta que ya acepta POST /rutas/importar/<tipo>, solo
+    que envueltas en un arreglo). Tambien acepta un solo objeto (sin arreglo)
+    por comodidad, tratandolo como una lista de un elemento."""
+    if empresa_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Como SUPER_ADMIN, indica ?empresa_id= para saber a que empresa pertenece este archivo",
+        )
+    if archivo.filename and not archivo.filename.lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail="El archivo debe ser un .json")
+
+    contenido = archivo.file.read()
+    try:
+        data = json.loads(contenido.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        raise HTTPException(status_code=400, detail=f"JSON invalido: {e}")
+
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        raise HTTPException(
+            status_code=400,
+            detail="El archivo debe contener un arreglo (lista) de rutas, o una sola ruta como objeto",
+        )
+    if not data:
+        raise HTTPException(status_code=400, detail="El archivo no tiene ninguna ruta")
+
+    rutas_parseadas: List[Tuple[str, schemas.RutaImport]] = []
+    errores_items: List[dict] = []
+    for idx, item in enumerate(data):
+        codigo_ruta = item.get("codigo_ruta") if isinstance(item, dict) else None
+        try:
+            if not isinstance(item, dict):
+                raise ValueError("cada elemento del arreglo debe ser un objeto de ruta")
+            ruta_import = schemas.RutaImport(**item)
+        except (ValidationError, ValueError) as e:
+            errores_items.append(
+                {"fila": idx + 1, "codigo_ruta": codigo_ruta, "error": str(e)}
+            )
+            continue
+        rutas_parseadas.append((ruta_import.codigo_ruta, ruta_import))
+
+    resultados = _procesar_lote(rutas_parseadas, es_planificada, db, empresa_id)
+    return _resumen_lote(resultados, errores_items)
+
+
+@router.post("/importar-json-lote/planificada")
+def importar_json_lote_planificada(
+    archivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(auth.require_role(*ROLES_IMPORTAR)),
+    empresa_id: Optional[int] = Depends(auth.empresa_actual),
+):
+    """Carga masiva de rutas PLANIFICADAS de un dia via un unico archivo JSON
+    que contiene una lista de rutas (mismo formato que la importacion JSON de
+    una sola ruta, pero varias envueltas en un arreglo)."""
+    return _importar_json_lote(archivo, es_planificada=True, db=db, empresa_id=empresa_id)
+
+
+@router.post("/importar-json-lote/ejecutada")
+def importar_json_lote_ejecutada(
+    archivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(auth.require_role(*ROLES_IMPORTAR)),
+    empresa_id: Optional[int] = Depends(auth.empresa_actual),
+):
+    """Carga masiva de rutas EJECUTADAS de un dia via un unico archivo JSON con
+    una lista de rutas. Cada ruta debe traer su propio `ruta_planificada_id`
+    (igual que en la importacion JSON de una sola ruta)."""
+    return _importar_json_lote(archivo, es_planificada=False, db=db, empresa_id=empresa_id)
 
 
 @router.post("/importar-csv/planificada")
