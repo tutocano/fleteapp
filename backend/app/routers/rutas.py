@@ -22,6 +22,21 @@ def _importar_ruta(payload: schemas.RutaImport, es_planificada: bool, db: Sessio
     if not tarifa:
         raise HTTPException(status_code=404, detail="Tarifa de transportista no encontrada")
 
+    # Si la tarifa esta restringida a un tipo de camion especifico, la ruta debe
+    # usar ese mismo tipo de camion. Si tarifa.tipo_camion_id es None, la tarifa
+    # aplica a cualquier camion y no hay nada que validar.
+    if tarifa.tipo_camion_id is not None and tarifa.tipo_camion_id != payload.tipo_camion_id:
+        tarifa_camion_nombre = tarifa.tipo_camion.nombre if tarifa.tipo_camion else tarifa.tipo_camion_id
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"La tarifa '{tarifa.nombre}' solo aplica para camion tipo "
+                f"'{tarifa_camion_nombre}', pero la ruta especifica un tipo de camion distinto "
+                f"(id {payload.tipo_camion_id}). Selecciona la tarifa correcta para ese camion "
+                f"o una tarifa generica (sin tipo de camion asignado)."
+            ),
+        )
+
     if not payload.paradas:
         raise HTTPException(status_code=400, detail="La ruta debe tener al menos una parada")
 
@@ -143,6 +158,7 @@ def obtener_ruta(ruta_id: int, db: Session = Depends(get_db)):
         .options(joinedload(models.Ruta.paradas).joinedload(models.ParadaRuta.pedidos))
         .options(joinedload(models.Ruta.paradas).joinedload(models.ParadaRuta.cliente))
         .options(joinedload(models.Ruta.centro_distribucion))
+        .options(joinedload(models.Ruta.tipo_camion))
         .get(ruta_id)
     )
     if not ruta:

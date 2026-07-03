@@ -61,6 +61,10 @@ class ZonaGeograficaBase(BaseModel):
     nombre: str
     descripcion: Optional[str] = None
     tarifa_zona: float = 0
+    # Poligono aproximado [[lat, lon], ...] construido manualmente para v2
+    # (ver comentario en app.models.models.ZonaGeografica). Opcional para no
+    # romper zonas creadas antes de este campo.
+    poligono: Optional[List[List[float]]] = None
 
 
 class ZonaGeograficaCreate(ZonaGeograficaBase):
@@ -168,6 +172,10 @@ class TarifaZonaDetalleOut(ORMBase, TarifaZonaDetalleBase):
 class TarifaTransportistaBase(BaseModel):
     transportista_id: int
     metodo_tarifa_id: int
+    # None = la tarifa aplica a cualquier tipo de camion. Si se especifica, solo
+    # aplica para ese tipo de camion (permite tarifas distintas por camion para
+    # cualquiera de los 6 metodos).
+    tipo_camion_id: Optional[int] = None
     nombre: str
     valor_unitario: float = 0
     unidad: Optional[str] = None
@@ -181,6 +189,7 @@ class TarifaTransportistaCreate(TarifaTransportistaBase):
 class TarifaTransportistaOut(ORMBase, TarifaTransportistaBase):
     id: int
     zonas_detalle: List[TarifaZonaDetalleOut] = []
+    tipo_camion: Optional[TipoCamionOut] = None
 
 
 # ---------- Producto ----------
@@ -268,6 +277,7 @@ class RutaOut(ORMBase):
     detalle_calculo: Optional[Dict[str, Any]] = None
     paradas: List[ParadaOut] = []
     centro_distribucion: Optional[CentroDistribucionOut] = None
+    tipo_camion: Optional[TipoCamionOut] = None
 
 
 class RutaListOut(ORMBase):

@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -13,6 +15,7 @@ _METODOS_TARIFA_BASE = [
     ("POR_ZONA", "Por zona de entrega", "Tarifa de la zona mas alejada/costosa entre los clientes de la ruta"),
     ("POR_PESO_VOLUMEN", "Por volumen o peso entregado", "Tarifa por m3 o por kg entregado, sumando todos los clientes de la ruta"),
     ("POR_TIEMPO_SERVICIO", "Por tiempo de servicio", "Tarifa por hora/minuto de atencion en clientes, sumada en la ruta"),
+    ("POR_KILOMETRO", "Por kilometro recorrido", "Tarifa por km recorrido, segun la suma de distancia_km_tramo de las paradas de la ruta"),
 ]
 
 
@@ -36,8 +39,22 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Origenes permitidos para CORS. Por defecto solo localhost (desarrollo). En
+# produccion se agrega el dominio real del frontend via la variable de entorno
+# FRONTEND_ORIGINS (uno o mas, separados por coma), sin tocar codigo -- asi el
+# mismo Dockerfile/imagen sirve para local, Render, o cualquier otro host.
+_origenes_extra = [
+    o.strip() for o in os.getenv("FRONTEND_ORIGINS", "").split(",") if o.strip()
+]
+_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    *_origenes_extra,
+]
+
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=_ALLOWED_ORIGINS,
     allow_origin_regex=r"http://localhost(:\d+)?|http://127\.0\.0\.1(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],

@@ -1,19 +1,27 @@
 """
 Servicio de calculo de costo de flete.
 
-Implementa los 5 metodos de tarifa:
+Implementa los 6 metodos de tarifa:
 1. POR_VIAJE: tarifa fija, sin importar paradas/distancia.
 2. POR_PARADA: tarifa * numero de paradas (clientes visitados).
 3. POR_ZONA: tarifa de la zona MAS COSTOSA entre todos los clientes de la ruta.
+   La zona de cada parada se determina automaticamente por punto-en-poligono
+   (ver app.services.geo) usando las coordenadas del cliente; si el punto no
+   cae en ningun poligono se usa como respaldo el zona_geografica_id manual
+   del cliente, dejando trazabilidad de cuando se uso el respaldo.
 4. POR_PESO_VOLUMEN: tarifa * (peso total en kg o volumen total en m3, segun `unidad`).
 5. POR_TIEMPO_SERVICIO: tarifa * tiempo total de servicio (en minutos u horas, segun `unidad`).
+6. POR_KILOMETRO: tarifa * distancia total recorrida en la ruta (suma de
+   distancia_km_tramo de todas las paradas de ESA ruta especifica: funciona
+   igual para planificada y ejecutada, cada una con sus propias distancias).
 """
 from dataclasses import dataclass, field
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models.models import Ruta, ParadaRuta, TarifaTransportista, TarifaZonaDetalle
+from app.models.models import Ruta, ParadaRuta, TarifaTransportista, TarifaZonaDetalle, ZonaGeografica
+from app.services.geo import determinar_zona
 
 
 @dataclass
@@ -45,7 +53,11 @@ def calcular_costo_ruta(db: Session, ruta: Ruta) -> DetalleCalculo:
             metodo=metodo_codigo,
             costo_total=round(costo, 2),
             explicacion=f"Tarifa fija por viaje completo: ${tarifa.valor_unitario:,.2f}",
-            variables={"valor_unitario": tarifa.valor_unitario},
+            variables={
+                "valor_unitario": tarifa.valor_unitario,
+                "unidad": "VIAJE",
+                "base_calculo": 1,
+            },
         )
 
     if metodo_codigo == "POR_PARADA":
@@ -56,44 +68,74 @@ def calcular_costo_ruta(db: Session, ruta: Ruta) -> DetalleCalculo:
             explicacion=(
                 f"{num_paradas} paradas x ${tarifa.valor_unitario:,.2f} c/u = ${costo:,.2f}"
             ),
-            variables={"num_paradas": num_paradas, "valor_unitario": tarifa.valor_unitario},
+            variables={
+                "num_paradas": num_paradas,
+                "valor_unitario": tarifa.valor_unitario,
+                "unidad": "PARADA",
+                "base_calculo": num_paradas,
+            },
         )
 
     if metodo_codigo == "POR_ZONA":
-        # Determinar la zona de cada cliente de la ruta, cruzar contra la tabla
-        # de tarifas por zona del transportista, y tomar el valor MAXIMO.
+        # Determinar la zona de cada cliente de la ruta mediante punto-en-poligono
+        # (algoritmo de ray casting sobre ZonaGeografica.poligono), cruzar contra
+        # la tabla de tarifas por zona del transportista, y tomar el valor MAXIMO.
         zonas_detalle = {zd.zona_geografica_id: zd.valor for zd in tarifa.zonas_detalle}
+        todas_zonas = db.query(ZonaGeografica).all()
         max_valor = 0.0
         max_zona_nombre = None
         max_cliente_nombre = None
         detalle_por_parada = []
         for parada in paradas:
             cliente = parada.cliente
-            zona_id = cliente.zona_geografica_id
+            zona_detectada = determinar_zona(cliente.latitud, cliente.longitud, todas_zonas)
+            uso_respaldo_manual = False
+            if zona_detectada is not None:
+                zona_efectiva = zona_detectada
+            elif cliente.zona_geografica is not None:
+                # Caso borde: el punto no cayo en ningun poligono. Se usa como
+                # respaldo el zona_geografica_id asignado manualmente al cliente,
+                # dejando registro explicito de que se aplico el respaldo.
+                zona_efectiva = cliente.zona_geografica
+                uso_respaldo_manual = True
+            else:
+                zona_efectiva = None
+
+            zona_id = zona_efectiva.id if zona_efectiva else None
             valor_zona = zonas_detalle.get(zona_id)
             if valor_zona is None:
                 # Si el transportista no tiene tarifa definida para esa zona,
                 # se usa la tarifa base de la zona como respaldo.
-                valor_zona = cliente.zona_geografica.tarifa_zona if cliente.zona_geografica else 0.0
+                valor_zona = zona_efectiva.tarifa_zona if zona_efectiva else 0.0
+
             detalle_por_parada.append(
                 {
                     "cliente": cliente.nombre,
-                    "zona": cliente.zona_geografica.nombre if cliente.zona_geografica else None,
+                    "zona_por_poligono": zona_detectada.nombre if zona_detectada else None,
+                    "zona_aplicada": zona_efectiva.nombre if zona_efectiva else None,
+                    "uso_respaldo_manual": uso_respaldo_manual,
                     "valor_zona": valor_zona,
                 }
             )
             if valor_zona > max_valor:
                 max_valor = valor_zona
-                max_zona_nombre = cliente.zona_geografica.nombre if cliente.zona_geografica else None
+                max_zona_nombre = zona_efectiva.nombre if zona_efectiva else None
                 max_cliente_nombre = cliente.nombre
         return DetalleCalculo(
             metodo=metodo_codigo,
             costo_total=round(max_valor, 2),
             explicacion=(
-                f"Zona mas costosa: '{max_zona_nombre}' (cliente {max_cliente_nombre}) "
-                f"= ${max_valor:,.2f}. Se aplica esta tarifa al viaje completo."
+                f"Zona mas costosa: '{max_zona_nombre}' (cliente {max_cliente_nombre}, "
+                f"detectada por poligono) = ${max_valor:,.2f}. Se aplica esta tarifa al viaje completo."
             ),
-            variables={"detalle_por_parada": detalle_por_parada, "max_valor": max_valor},
+            variables={
+                "detalle_por_parada": detalle_por_parada,
+                "max_valor": max_valor,
+                "zona_aplicada": max_zona_nombre,
+                "unidad": "ZONA",
+                "valor_unitario": max_valor,
+                "base_calculo": 1,
+            },
         )
 
     if metodo_codigo == "POR_PESO_VOLUMEN":
@@ -152,6 +194,24 @@ def calcular_costo_ruta(db: Session, ruta: Ruta) -> DetalleCalculo:
                 "tiempo_total_min": tiempo_total_min,
                 "unidad": unidad,
                 "base_calculo": base,
+                "valor_unitario": tarifa.valor_unitario,
+            },
+        )
+
+    if metodo_codigo == "POR_KILOMETRO":
+        distancia_total_km = sum(p.distancia_km_tramo or 0.0 for p in paradas)
+        costo = tarifa.valor_unitario * distancia_total_km
+        explicacion = (
+            f"{distancia_total_km:,.2f} km recorridos x ${tarifa.valor_unitario:,.2f}/km = ${costo:,.2f}"
+        )
+        return DetalleCalculo(
+            metodo=metodo_codigo,
+            costo_total=round(costo, 2),
+            explicacion=explicacion,
+            variables={
+                "distancia_total_km": distancia_total_km,
+                "unidad": "KM",
+                "base_calculo": distancia_total_km,
                 "valor_unitario": tarifa.valor_unitario,
             },
         )

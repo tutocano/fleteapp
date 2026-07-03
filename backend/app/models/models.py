@@ -61,6 +61,15 @@ class ZonaGeografica(Base):
     nombre = Column(String(150), nullable=False)
     descripcion = Column(String(300))
     tarifa_zona = Column(Float, nullable=False, default=0)
+    # Poligono aproximado (lista de [lat, lon]) que delimita la zona en el mapa.
+    # v2: construido manualmente a partir del conocimiento general de las localidades
+    # de Bogota (8-15 vertices, sin auto-interseccion), NO es un shapefile oficial.
+    # Se guarda como JSON para no acoplar el modelo a una libreria geoespacial
+    # especifica; en el futuro puede reemplazarse por un poligono importado desde
+    # el GeoJSON oficial de localidades de IDECA (https://www.ideca.gov.co/) sin
+    # cambiar el esquema: basta con sobreescribir este campo con las coordenadas
+    # reales (siempre como lista de pares [lat, lon]).
+    poligono = Column(JSON, nullable=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
 
 
@@ -138,6 +147,14 @@ class TarifaTransportista(Base):
     id = Column(Integer, primary_key=True, index=True)
     transportista_id = Column(Integer, ForeignKey("transportista.id"), nullable=False)
     metodo_tarifa_id = Column(Integer, ForeignKey("metodo_tarifa.id"), nullable=False)
+    # Si es NULL, la tarifa aplica a cualquier tipo de camion (comportamiento v1,
+    # retrocompatible). Si se especifica, esta tarifa SOLO aplica para ese tipo de
+    # camion puntual -- asi un mismo transportista/metodo puede tener valores
+    # distintos segun el camion usado (ej. POR_VIAJE con NHR vs con Sencillo).
+    # Esta unica columna generaliza la variable "tipo de camion" a los 6 metodos
+    # de tarifa sin tocar la logica de calculo de cada uno: el calculo siempre usa
+    # el valor_unitario/zonas_detalle de la fila de tarifa ya seleccionada.
+    tipo_camion_id = Column(Integer, ForeignKey("tipo_camion.id"), nullable=True)
     nombre = Column(String(150), nullable=False)
     valor_unitario = Column(Float, nullable=False, default=0)
     unidad = Column(String(30))
@@ -146,6 +163,7 @@ class TarifaTransportista(Base):
 
     transportista = relationship("Transportista", back_populates="tarifas")
     metodo_tarifa = relationship("MetodoTarifa")
+    tipo_camion = relationship("TipoCamion")
     zonas_detalle = relationship(
         "TarifaZonaDetalle", back_populates="tarifa_transportista", cascade="all, delete-orphan"
     )

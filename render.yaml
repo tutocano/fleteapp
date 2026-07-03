@@ -1,0 +1,63 @@
+# Blueprint de Render para desplegar fleteapp completo (backend + frontend + BD)
+# con un solo clic, usando exclusivamente planes gratuitos.
+#
+# Como usarlo:
+#   1. Sube este repositorio a GitHub (ver GUIA_DESPLIEGUE_RENDER.md).
+#   2. En Render: New > Blueprint > conecta el repo > Render lee este archivo
+#      y crea los 3 recursos de abajo automaticamente.
+#   3. Antes de aplicar, revisa/edita los nombres de servicio si "fleteapp-backend"
+#      o "fleteapp-frontend" ya estan tomados por otro usuario de Render (los
+#      subdominios *.onrender.com son globales) -- si Render te asigna un nombre
+#      distinto, actualiza manualmente las variables VITE_API_URL y
+#      FRONTEND_ORIGINS en el dashboard para que apunten a las URLs reales.
+#   4. Corre el seed una vez desplegado (ver guia): Shell del servicio backend
+#      > `python seed.py`.
+#
+# Limite importante de la capa gratuita de Render: la base de datos Postgres
+# gratuita expira 30 dias despues de creada (con 14 dias de gracia para
+# subirla a un plan pago antes de que se borre). Para un ambiente de prueba
+# esto es aceptable, pero si necesitas que los datos persistan mas de ~44 dias
+# sin intervencion, revisa GUIA_DESPLIEGUE_RENDER.md para las opciones.
+
+services:
+  # ---------- Backend: FastAPI (Docker) ----------
+  - type: web
+    name: fleteapp-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fleteapp-db
+          property: connectionString
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false  # se ingresa manualmente en el dashboard de Render (no va en el repo)
+      - key: FRONTEND_ORIGINS
+        value: https://fleteapp-frontend.onrender.com
+
+  # ---------- Frontend: React/Vite (sitio estatico, no "duerme") ----------
+  - type: web
+    name: fleteapp-frontend
+    runtime: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    autoDeploy: true
+    envVars:
+      - key: VITE_API_URL
+        value: https://fleteapp-backend.onrender.com/api
+    routes:
+      # SPA con react-router: cualquier ruta no encontrada debe servir index.html
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+databases:
+  # ---------- Base de datos: Postgres gratuita ----------
+  - name: fleteapp-db
+    plan: free
+    databaseName: flete_db
+    user: flete_user

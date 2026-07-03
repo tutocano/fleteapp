@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../api/client.js'
+import DetalleCalculoTabla from '../components/DetalleCalculoTabla.jsx'
 
 function DiffCell({ value, pct }) {
   if (value === null || value === undefined) return <span className="diff-zero">-</span>
@@ -16,6 +17,8 @@ export default function ConciliacionPage() {
   const [porRuta, setPorRuta] = useState([])
   const [porTransportista, setPorTransportista] = useState([])
   const [loading, setLoading] = useState(true)
+  const [expandidoId, setExpandidoId] = useState(null)
+  const [detalles, setDetalles] = useState({}) // { rutaId: { plan, ejec } }
 
   useEffect(() => {
     Promise.all([api.get('/conciliacion/rutas'), api.get('/conciliacion/transportistas')]).then(
@@ -26,6 +29,24 @@ export default function ConciliacionPage() {
       }
     )
   }, [])
+
+  const toggleDetalle = async (fila) => {
+    const key = fila.ruta_planificada_id
+    if (expandidoId === key) {
+      setExpandidoId(null)
+      return
+    }
+    setExpandidoId(key)
+    if (!detalles[key]) {
+      const planReq = api.get(`/rutas/${fila.ruta_planificada_id}`)
+      const ejecReq = fila.ruta_ejecutada_id ? api.get(`/rutas/${fila.ruta_ejecutada_id}`) : Promise.resolve(null)
+      const [planRes, ejecRes] = await Promise.all([planReq, ejecReq])
+      setDetalles((prev) => ({
+        ...prev,
+        [key]: { plan: planRes.data, ejec: ejecRes ? ejecRes.data : null },
+      }))
+    }
+  }
 
   if (loading) return <p>Cargando conciliacion...</p>
 
@@ -48,24 +69,64 @@ export default function ConciliacionPage() {
               <th>Costo Planificado</th>
               <th>Costo Real</th>
               <th>Diferencia</th>
+              <th>Detalle</th>
             </tr>
           </thead>
           <tbody>
             {porRuta.map((r) => (
-              <tr key={r.ruta_planificada_id}>
-                <td>{r.codigo_ruta}</td>
-                <td>{r.transportista_nombre}</td>
-                <td>{r.metodo_tarifa}</td>
-                <td>{r.costo_planificado?.toLocaleString() ?? '-'}</td>
-                <td>{r.costo_real?.toLocaleString() ?? 'Sin ejecutar'}</td>
-                <td>
-                  <DiffCell value={r.diferencia_absoluta} pct={r.diferencia_porcentual} />
-                </td>
-              </tr>
+              <>
+                <tr key={r.ruta_planificada_id}>
+                  <td>{r.codigo_ruta}</td>
+                  <td>{r.transportista_nombre}</td>
+                  <td>{r.metodo_tarifa}</td>
+                  <td>{r.costo_planificado?.toLocaleString() ?? '-'}</td>
+                  <td>{r.costo_real?.toLocaleString() ?? 'Sin ejecutar'}</td>
+                  <td>
+                    <DiffCell value={r.diferencia_absoluta} pct={r.diferencia_porcentual} />
+                  </td>
+                  <td>
+                    <button className="btn secondary" onClick={() => toggleDetalle(r)}>
+                      {expandidoId === r.ruta_planificada_id ? 'Ocultar' : 'Ver calculo'}
+                    </button>
+                  </td>
+                </tr>
+                {expandidoId === r.ruta_planificada_id && (
+                  <tr>
+                    <td colSpan={7}>
+                      {detalles[r.ruta_planificada_id] ? (
+                        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                          <div style={{ flex: 1, minWidth: 320 }}>
+                            <strong>Planificado</strong>
+                            <DetalleCalculoTabla
+                              detalleCalculo={detalles[r.ruta_planificada_id].plan?.detalle_calculo}
+                              costoTotal={detalles[r.ruta_planificada_id].plan?.costo_flete_calculado}
+                              tipoCamion={detalles[r.ruta_planificada_id].plan?.tipo_camion}
+                            />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 320 }}>
+                            <strong>Ejecutado</strong>
+                            {detalles[r.ruta_planificada_id].ejec ? (
+                              <DetalleCalculoTabla
+                                detalleCalculo={detalles[r.ruta_planificada_id].ejec?.detalle_calculo}
+                                costoTotal={detalles[r.ruta_planificada_id].ejec?.costo_flete_calculado}
+                                tipoCamion={detalles[r.ruta_planificada_id].ejec?.tipo_camion}
+                              />
+                            ) : (
+                              <p>Sin ruta ejecutada asociada aun.</p>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <p>Cargando detalle...</p>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </>
             ))}
             {porRuta.length === 0 && (
               <tr>
-                <td colSpan={6}>No hay rutas planificadas registradas.</td>
+                <td colSpan={7}>No hay rutas planificadas registradas.</td>
               </tr>
             )}
           </tbody>

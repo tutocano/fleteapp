@@ -11,6 +11,7 @@ import FlotaPage from './pages/FlotaPage.jsx'
 import RutasPage from './pages/RutasPage.jsx'
 import ConciliacionPage from './pages/ConciliacionPage.jsx'
 import MapaPage from './pages/MapaPage.jsx'
+import MapaGeneralPage from './pages/MapaGeneralPage.jsx'
 
 function App() {
   return (
@@ -30,6 +31,7 @@ function App() {
         <div className="sidebar-group">Operacion</div>
         <NavLink to="/rutas">Rutas (Import)</NavLink>
         <NavLink to="/mapa">Mapa de Rutas</NavLink>
+        <NavLink to="/mapa-general">Mapa General</NavLink>
         <NavLink to="/conciliacion">Conciliacion</NavLink>
       </aside>
       <main className="content">
@@ -45,6 +47,7 @@ function App() {
           <Route path="/productos" element={<ProductosPage />} />
           <Route path="/rutas" element={<RutasPage />} />
           <Route path="/mapa" element={<MapaPage />} />
+          <Route path="/mapa-general" element={<MapaGeneralPage />} />
           <Route path="/conciliacion" element={<ConciliacionPage />} />
         </Routes>
       </main>

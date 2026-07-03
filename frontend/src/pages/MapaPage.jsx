@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Polygon } from 'react-leaflet'
 import L from 'leaflet'
 import api from '../api/client.js'
 
@@ -17,6 +17,7 @@ const cediIcon = new L.Icon({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   iconSize: [30, 46],
   iconAnchor: [15, 46],
+  className: 'cedi-marker-icon',
 })
 
 // Icono explicito para clientes: NUNCA pasar `icon={undefined}` a un Marker de
@@ -27,15 +28,20 @@ const cediIcon = new L.Icon({
 // intenta remover ese marker (por ejemplo al cambiar de ruta seleccionada).
 const clienteIcon = new L.Icon.Default()
 
+// Paleta simple para diferenciar poligonos de zona de fondo (capa contextual, opcional).
+const ZONA_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#14b8a6']
+
 export default function MapaPage() {
   const [rutasPlan, setRutasPlan] = useState([])
   const [rutaSeleccionada, setRutaSeleccionada] = useState(null)
   const [datosPlan, setDatosPlan] = useState(null)
   const [datosEjec, setDatosEjec] = useState(null)
   const [rutaEjecId, setRutaEjecId] = useState(null)
+  const [zonas, setZonas] = useState([])
 
   useEffect(() => {
     api.get('/rutas/?es_planificada=true').then((res) => setRutasPlan(res.data))
+    api.get('/zonas-geograficas/').then((res) => setZonas(res.data))
   }, [])
 
   const cargarRuta = async (rutaPlanId) => {
@@ -109,6 +115,22 @@ export default function MapaPage() {
             url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
             maxZoom={19}
           />
+          {zonas.map((z, idx) =>
+            z.poligono && z.poligono.length > 2 ? (
+              <Polygon
+                key={`zona-${z.id}`}
+                positions={z.poligono}
+                pathOptions={{
+                  color: ZONA_COLORS[idx % ZONA_COLORS.length],
+                  fillColor: ZONA_COLORS[idx % ZONA_COLORS.length],
+                  fillOpacity: 0.08,
+                  weight: 1,
+                }}
+              >
+                <Popup>{z.nombre}</Popup>
+              </Polygon>
+            ) : null
+          )}
           {datosPlan &&
             datosPlan.puntos.map((p, idx) => (
               <Marker

@@ -13,4 +13,7 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Render (y otros PaaS) inyectan la variable PORT y esperan que el servicio
+# escuche ahi. Localmente (docker-compose) PORT no esta seteada, asi que cae
+# al 8000 de siempre. shell form permite expandir la variable de entorno.
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}

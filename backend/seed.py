@@ -96,23 +96,55 @@ def main():
     print("Tipos de cliente creados")
 
     print("\n== Zonas Geograficas ==")
+    # NOTA v2: los poligonos abajo son aproximados, construidos manualmente a partir
+    # del conocimiento general de la geografia/localidades de Bogota (8-12 vertices
+    # cada uno, sin auto-interseccion). NO son un shapefile oficial. Se verifico que
+    # los 15 clientes de este seed y los 2 CEDIs caen dentro de alguna de estas 4
+    # zonas y que los poligonos no se solapan entre si (script de verificacion en
+    # el flujo de build de v2). En el futuro pueden reemplazarse por el GeoJSON
+    # oficial de localidades de IDECA (https://www.ideca.gov.co/) sin cambiar el
+    # modelo de datos: basta con sobreescribir el campo `poligono`.
+    poligono_centro = [
+        [4.6720, -74.0700], [4.6650, -74.0560], [4.6450, -74.0500], [4.6250, -74.0560],
+        [4.6050, -74.0680], [4.5980, -74.0900], [4.6150, -74.1020], [4.6450, -74.0980],
+        [4.6650, -74.0900],
+    ]
+    poligono_norte = [
+        [4.6720, -74.0700], [4.6650, -74.0900], [4.6700, -74.1150], [4.6950, -74.1300],
+        [4.7550, -74.1200], [4.8150, -74.0700], [4.8000, -74.0100], [4.7300, -74.0050],
+        [4.6900, -74.0250], [4.6650, -74.0560],
+    ]
+    poligono_sur = [
+        [4.6150, -74.1020], [4.5980, -74.0900], [4.6050, -74.0680], [4.6250, -74.0560],
+        [4.6100, -74.0520], [4.5750, -74.0650], [4.5300, -74.0850], [4.5050, -74.1300],
+        [4.5350, -74.1650], [4.5900, -74.1650], [4.6350, -74.1650], [4.6450, -74.1300],
+    ]
+    poligono_occidente = [
+        [4.6950, -74.1300], [4.6700, -74.1150], [4.6450, -74.1300], [4.6350, -74.1650],
+        [4.5900, -74.1650], [4.5350, -74.1650], [4.5050, -74.1950], [4.5350, -74.2500],
+        [4.6000, -74.2550], [4.6600, -74.2100], [4.7000, -74.1700],
+    ]
     zona_centro = post(
         "/zonas-geograficas/",
-        {"nombre": "Zona Centro", "descripcion": "Centro de Bogota", "tarifa_zona": 80000},
+        {"nombre": "Zona Centro", "descripcion": "Centro de Bogota (Chapinero centro, Santa Fe, Candelaria, Paloquemao)",
+         "tarifa_zona": 80000, "poligono": poligono_centro},
     )
     zona_norte = post(
         "/zonas-geograficas/",
-        {"nombre": "Zona Norte", "descripcion": "Norte de Bogota", "tarifa_zona": 100000},
+        {"nombre": "Zona Norte", "descripcion": "Norte de Bogota (Usaquen, Suba oriental, Chapinero norte)",
+         "tarifa_zona": 100000, "poligono": poligono_norte},
     )
     zona_sur = post(
         "/zonas-geograficas/",
-        {"nombre": "Zona Sur", "descripcion": "Sur de Bogota", "tarifa_zona": 90000},
+        {"nombre": "Zona Sur", "descripcion": "Sur de Bogota (Kennedy, Tunjuelito, Restrepo)",
+         "tarifa_zona": 90000, "poligono": poligono_sur},
     )
     zona_occidente = post(
         "/zonas-geograficas/",
-        {"nombre": "Zona Occidente/Soacha", "descripcion": "Occidente y Soacha (mas alejada)", "tarifa_zona": 150000},
+        {"nombre": "Zona Occidente/Soacha", "descripcion": "Occidente y Soacha (Bosa, Fontibon, limite con Soacha, la mas alejada)",
+         "tarifa_zona": 150000, "poligono": poligono_occidente},
     )
-    print("Zonas creadas")
+    print("Zonas creadas (con poligonos aproximados v2)")
 
     print("\n== Clientes (Bogota) ==")
     # 15 clientes con coordenadas reales aproximadas de Bogota, distribuidos por zona/canal
@@ -205,14 +237,32 @@ def main():
     post("/flota/", {"transportista_id": trans2["id"], "tipo_camion_id": tipo_sencillo["id"], "placa": "LOG-201", "descripcion": "Sencillo 1", "activo": True})
     post("/flota/", {"transportista_id": trans3["id"], "tipo_camion_id": tipo_nhr["id"], "placa": "VAL-301", "descripcion": "NHR 1", "activo": True})
 
-    # Tarifa 1: TransRapido - Por viaje
+    # Tarifa 1: TransRapido - Por viaje (general, aplica a cualquier tipo de camion
+    # que no tenga una tarifa mas especifica definida abajo)
     tarifa_trans1_viaje = post(
         "/tarifas-transportista/",
         {
             "transportista_id": trans1["id"],
             "metodo_tarifa_id": metodos["POR_VIAJE"]["id"],
-            "nombre": "Tarifa plana por viaje - TransRapido",
+            "tipo_camion_id": None,
+            "nombre": "Tarifa plana por viaje - TransRapido (cualquier camion)",
             "valor_unitario": 250000,
+            "unidad": "VIAJE",
+            "activo": True,
+        },
+    )
+    # Tarifa 1b: TransRapido - Por viaje, pero restringida a camion NHR (mas
+    # pequeno y barato de operar que el Turbo/Sencillo por defecto). Demuestra
+    # que un mismo metodo puede tener valores distintos segun el tipo de camion:
+    # esta tarifa SOLO puede usarse en rutas con tipo_camion_id = NHR.
+    tarifa_trans1_viaje_nhr = post(
+        "/tarifas-transportista/",
+        {
+            "transportista_id": trans1["id"],
+            "metodo_tarifa_id": metodos["POR_VIAJE"]["id"],
+            "tipo_camion_id": tipo_nhr["id"],
+            "nombre": "Tarifa plana por viaje - TransRapido (solo camion NHR)",
+            "valor_unitario": 180000,
             "unidad": "VIAJE",
             "activo": True,
         },
@@ -283,7 +333,19 @@ def main():
             "activo": True,
         },
     )
-    print("Tarifas creadas para los 5 metodos, distribuidas en 3 transportistas")
+    # Tarifa 7 (v2): LogiCarga - Por kilometro recorrido
+    tarifa_trans2_km = post(
+        "/tarifas-transportista/",
+        {
+            "transportista_id": trans2["id"],
+            "metodo_tarifa_id": metodos["POR_KILOMETRO"]["id"],
+            "nombre": "Tarifa por km recorrido - LogiCarga",
+            "valor_unitario": 2500,
+            "unidad": "KM",
+            "activo": True,
+        },
+    )
+    print("Tarifas creadas para los 6 metodos, distribuidas en 3 transportistas")
 
     # ================= RUTA PLANIFICADA (usa metodo POR_ZONA, LogiCarga) =================
     print("\n== Ruta Planificada (LogiCarga, metodo POR_ZONA) ==")
@@ -689,6 +751,156 @@ def main():
     )
     print("Ruta ejecutada 7 (POR_VIAJE). ID:", ruta_ejec7["id"], "| Costo real:", ruta_ejec7["costo_flete_calculado"],
           "(igual al planificado por ser tarifa plana, pese al cambio de recorrido)")
+
+    # ================= Ruta 8 (v2): LogiCarga, metodo POR_KILOMETRO =================
+    print("\n== Ruta Planificada 8 (LogiCarga, metodo POR_KILOMETRO) ==")
+    # Se fijan distancia_km_tramo explicitas (no se usa el fallback Haversine) para
+    # que el costo esperado sea verificable de forma determinista: 2500/km.
+    seleccion8 = [clientes[2], clientes[13]]  # Carulla 85, Alkosto Calle 80 (Zona Norte)
+    paradas_plan8 = [
+        {
+            "cliente_id": seleccion8[0]["id"],
+            "secuencia": 1,
+            "distancia_km_tramo": 8.4,
+            "tiempo_transito_min_tramo": 18,
+            "tiempo_servicio_min": 20,
+            "pedidos": [{"producto_id": productos[0]["id"], "cantidad": 20}],
+        },
+        {
+            "cliente_id": seleccion8[1]["id"],
+            "secuencia": 2,
+            "distancia_km_tramo": 6.1,
+            "tiempo_transito_min_tramo": 14,
+            "tiempo_servicio_min": 20,
+            "pedidos": [{"producto_id": productos[0]["id"], "cantidad": 20}],
+        },
+    ]
+    ruta_plan8 = post(
+        "/rutas/importar/planificada",
+        {
+            "codigo_ruta": "RUTA-BOG-008",
+            "centro_distribucion_id": cedi_norte["id"],
+            "transportista_id": trans2["id"],
+            "tarifa_transportista_id": tarifa_trans2_km["id"],
+            "tipo_camion_id": tipo_sencillo["id"],
+            "fecha": "2026-07-02T07:00:00",
+            "paradas": paradas_plan8,
+        },
+    )
+    print("Ruta planificada 8 (POR_KILOMETRO). ID:", ruta_plan8["id"], "| Costo estimado:", ruta_plan8["costo_flete_calculado"])
+    print("Explicacion:", ruta_plan8["detalle_calculo"]["explicacion"])
+
+    print("\n== Ruta Ejecutada 8 (recorrido real mas largo por trafico/desvio) ==")
+    # Distancias reales mayores a las planificadas para que la conciliacion muestre
+    # una diferencia positiva clara en el costo POR_KILOMETRO.
+    paradas_ejec8 = [
+        {
+            "cliente_id": seleccion8[0]["id"],
+            "secuencia": 1,
+            "distancia_km_tramo": 10.2,
+            "tiempo_transito_min_tramo": 25,
+            "tiempo_servicio_min": 22,
+            "pedidos": [{"producto_id": productos[0]["id"], "cantidad": 20}],
+        },
+        {
+            "cliente_id": seleccion8[1]["id"],
+            "secuencia": 2,
+            "distancia_km_tramo": 8.9,
+            "tiempo_transito_min_tramo": 21,
+            "tiempo_servicio_min": 20,
+            "pedidos": [{"producto_id": productos[0]["id"], "cantidad": 20}],
+        },
+    ]
+    ruta_ejec8 = post(
+        "/rutas/importar/ejecutada",
+        {
+            "codigo_ruta": "RUTA-BOG-008",
+            "centro_distribucion_id": cedi_norte["id"],
+            "transportista_id": trans2["id"],
+            "tarifa_transportista_id": tarifa_trans2_km["id"],
+            "tipo_camion_id": tipo_sencillo["id"],
+            "fecha": "2026-07-02T07:00:00",
+            "ruta_planificada_id": ruta_plan8["id"],
+            "paradas": paradas_ejec8,
+        },
+    )
+    print("Ruta ejecutada 8 (POR_KILOMETRO). ID:", ruta_ejec8["id"], "| Costo real:", ruta_ejec8["costo_flete_calculado"])
+    print("Explicacion:", ruta_ejec8["detalle_calculo"]["explicacion"])
+
+    # ================= Ruta 9 (v2): TransRapido, POR_VIAJE con tarifa especifica de camion NHR =================
+    print("\n== Ruta Planificada 9 (TransRapido, POR_VIAJE, tarifa restringida a camion NHR) ==")
+    # Misma metodologia (POR_VIAJE) y mismo transportista que la Ruta 3, pero usando
+    # la tarifa mas barata reservada para camion NHR ($180,000) en vez de la general
+    # ($250,000). Demuestra que el mismo metodo de tarifa da un costo distinto segun
+    # el tipo de camion asignado a la ruta.
+    seleccion9 = [clientes[4], clientes[11]]  # Tienda La Esquina (Usaquen), Dona Maria (Suba)
+    paradas_plan9 = [
+        {
+            "cliente_id": cli["id"],
+            "secuencia": i,
+            "tiempo_servicio_min": 18,
+            "pedidos": [{"producto_id": productos[5]["id"], "cantidad": 12}],
+        }
+        for i, cli in enumerate(seleccion9, start=1)
+    ]
+    ruta_plan9 = post(
+        "/rutas/importar/planificada",
+        {
+            "codigo_ruta": "RUTA-BOG-009",
+            "centro_distribucion_id": cedi_norte["id"],
+            "transportista_id": trans1["id"],
+            "tarifa_transportista_id": tarifa_trans1_viaje_nhr["id"],
+            "tipo_camion_id": tipo_nhr["id"],
+            "fecha": "2026-07-02T08:30:00",
+            "paradas": paradas_plan9,
+        },
+    )
+    print("Ruta planificada 9 (POR_VIAJE, tarifa NHR). ID:", ruta_plan9["id"],
+          "| Costo estimado:", ruta_plan9["costo_flete_calculado"],
+          "(vs $250,000 que costaria con la tarifa general de TransRapido para otro tipo de camion)")
+
+    print("\n== Ruta Ejecutada 9 (mismo viaje, misma tarifa NHR) ==")
+    paradas_ejec9 = [
+        {
+            "cliente_id": cli["id"],
+            "secuencia": i,
+            "tiempo_servicio_min": 22,
+            "pedidos": [{"producto_id": productos[5]["id"], "cantidad": 14}],
+        }
+        for i, cli in enumerate(seleccion9, start=1)
+    ]
+    ruta_ejec9 = post(
+        "/rutas/importar/ejecutada",
+        {
+            "codigo_ruta": "RUTA-BOG-009",
+            "centro_distribucion_id": cedi_norte["id"],
+            "transportista_id": trans1["id"],
+            "tarifa_transportista_id": tarifa_trans1_viaje_nhr["id"],
+            "tipo_camion_id": tipo_nhr["id"],
+            "fecha": "2026-07-02T08:30:00",
+            "ruta_planificada_id": ruta_plan9["id"],
+            "paradas": paradas_ejec9,
+        },
+    )
+    print("Ruta ejecutada 9 (POR_VIAJE, tarifa NHR). ID:", ruta_ejec9["id"], "| Costo real:", ruta_ejec9["costo_flete_calculado"])
+
+    print("\n== Validacion: una tarifa restringida a NHR no se puede usar con otro camion ==")
+    try:
+        post(
+            "/rutas/importar/planificada",
+            {
+                "codigo_ruta": "RUTA-BOG-009-INVALIDA",
+                "centro_distribucion_id": cedi_norte["id"],
+                "transportista_id": trans1["id"],
+                "tarifa_transportista_id": tarifa_trans1_viaje_nhr["id"],
+                "tipo_camion_id": tipo_sencillo["id"],  # camion distinto al de la tarifa (NHR) -> debe fallar
+                "fecha": "2026-07-02T08:30:00",
+                "paradas": paradas_plan9,
+            },
+        )
+        print("ERROR: se esperaba que la importacion fallara por incompatibilidad de tipo de camion.")
+    except Exception as e:
+        print("OK, la importacion fue rechazada como se esperaba:", str(e)[:200])
 
     print("\n== Conciliacion ==")
     conciliacion = get("/conciliacion/rutas")

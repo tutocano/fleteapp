@@ -159,3 +159,73 @@ el mismo formato, agregando `"ruta_planificada_id": <id de la ruta planificada>`
   avanzadas de negocio como duplicados).
 - La secuencia de paradas se asume ya optimizada al momento de importar (el sistema no
   hace ruteo/optimizacion, solo calcula costos sobre la secuencia dada).
+
+## Novedades v2
+
+Version 2 agrega 5 capacidades sobre el prototipo original (v1, protegido con tag `v1.0`
+en git), sin romper compatibilidad con las rutas y calculos existentes.
+
+1. **Poligonos de zona geografica.** `ZonaGeografica` tiene un nuevo campo JSON `poligono`
+   (lista de vertices `[lat, lon]`) que delimita cada una de las 4 zonas del seed (Centro,
+   Norte, Sur, Occidente/Soacha) sobre el mapa de Bogota. **Importante:** estos poligonos
+   fueron construidos manualmente por el equipo de desarrollo a partir del conocimiento
+   general de la geografia/localidades de Bogota (8-12 vertices cada uno) porque el intento
+   de descargar el GeoJSON oficial de localidades desde IDECA fue bloqueado por el entorno
+   de desarrollo. **No son un shapefile oficial** — son una aproximacion razonable para un
+   prototipo, verificada para que los clientes y CEDIs del seed caigan dentro de alguna zona
+   y que los 4 poligonos no se solapen entre si. El modelo de datos esta preparado para que
+   en el futuro se reemplace este campo con el GeoJSON real de IDECA (https://www.ideca.gov.co/)
+   sin cambiar el esquema: basta con sobreescribir `poligono` con las coordenadas oficiales.
+
+2. **Metodo de tarifa POR_KILOMETRO.** Nuevo metodo en el catalogo (`backend/app/main.py`):
+   costo = `valor_unitario` (precio por km) x distancia total de la ruta (suma de
+   `distancia_km_tramo` de todas sus paradas). Aplica igual a rutas planificadas y ejecutadas,
+   cada una con sus propias distancias, lo que permite ver diferencias reales en la conciliacion
+   cuando el recorrido real es mas largo que el planificado. Ver `RUTA-BOG-008` en el seed.
+
+3. **Deteccion automatica de zona por punto-en-poligono.** El metodo POR_ZONA ya no depende
+   unicamente del `zona_geografica_id` fijo del cliente: para cada parada de la ruta se
+   calcula la zona real segun las coordenadas del cliente y los poligonos (algoritmo de
+   ray casting en Python puro, `backend/app/services/geo.py`, sin dependencias nuevas). Si el
+   punto no cae en ningun poligono, se usa como respaldo el `zona_geografica_id` manual del
+   cliente (caso borde), y el detalle de calculo deja registrado explicitamente si se uso ese
+   respaldo (`uso_respaldo_manual`) para cada parada.
+
+4. **Mapa general de clientes y CEDIs** (`/mapa-general` en el frontend). Muestra en un solo
+   mapa todos los clientes (con canal/tipo en el popup) y todos los centros de distribucion,
+   sin necesidad de seleccionar una ruta especifica, con los poligonos de zona como capa de
+   fondo semi-transparente (un color distinto por zona).
+
+5. **Detalle estructurado del calculo de flete.** En `Rutas (Import)` y `Conciliacion`, cada
+   ruta tiene un boton "Ver calculo" que despliega una tabla con el metodo de tarifa aplicado,
+   el valor unitario (ej. "$2,500/km", "$800/kg"), la base de calculo (ej. "14.5 km", "1,230 kg")
+   y el costo total — ademas del texto de explicacion que ya existia. Para POR_ZONA se muestra
+   tambien el detalle por parada (zona detectada por poligono, zona aplicada, si se uso respaldo
+   manual).
+
+6. **Tarifas diferenciadas por tipo de camion.** `TarifaTransportista` tiene un nuevo campo
+   opcional `tipo_camion_id`. Si se deja vacio ("Cualquier camion" en el formulario de
+   `Tarifas de Flete`), la tarifa aplica sin importar el camion usado en la ruta (comportamiento
+   v1/v2, retrocompatible). Si se especifica, esa tarifa SOLO puede usarse en rutas con ese tipo
+   de camion exacto — asi un mismo transportista puede cobrar distinto por el mismo metodo segun
+   si usa un NHR, un Turbo o un Sencillo (ej. `RUTA-BOG-009` en el seed: POR_VIAJE con TransRapido
+   cuesta $180,000 con tarifa restringida a NHR, contra $250,000 con la tarifa general). Al
+   importar una ruta, si la tarifa elegida esta restringida a un camion distinto al de la ruta,
+   la importacion se rechaza con un error explicativo (ver `backend/app/routers/rutas.py`). Esta
+   misma columna generaliza la variable "tipo de camion" a los 6 metodos de tarifa sin tocar la
+   logica de calculo de ninguno, porque el calculo siempre usa el `valor_unitario`/`zonas_detalle`
+   de la fila de tarifa ya seleccionada.
+
+### Resetear y re-sembrar la base de datos (v2)
+
+```bash
+docker compose down -v
+docker compose up -d --build
+docker compose exec backend python seed.py
+```
+
+Esto crea desde cero las 4 zonas con sus poligonos, los 6 metodos de tarifa (incluyendo
+POR_KILOMETRO), y 9 pares de rutas planificada/ejecutada (las 7 de v1, `RUTA-BOG-008` que
+demuestra POR_KILOMETRO, y `RUTA-BOG-009` que demuestra tarifas diferenciadas por tipo de
+camion), ademas de una prueba automatica que confirma que una tarifa restringida a un camion
+rechaza rutas con un camion distinto.

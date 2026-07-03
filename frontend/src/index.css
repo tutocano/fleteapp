@@ -193,6 +193,14 @@ tr:hover td {
   font-size: 13px;
 }
 
+/* Recolorea el marcador azul por defecto de Leaflet a rojo para los CEDIs,
+   asi se distinguen a simple vista de los marcadores de cliente (que quedan
+   con el azul por defecto). Se aplica via CSS filter para no depender de
+   imagenes de marcador adicionales ni de dominios externos nuevos. */
+.cedi-marker-icon {
+  filter: hue-rotate(140deg) saturate(1.6) brightness(0.95);
+}
+
 .legend-item {
   display: flex;
   align-items: center;
@@ -203,4 +211,37 @@ tr:hover td {
   width: 16px;
   height: 4px;
   border-radius: 2px;
+}
+
+/* ---- v2: detalle de calculo estructurado (RutasPage / ConciliacionPage) ---- */
+.detalle-calculo {
+  margin-top: 8px;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+}
+
+.detalle-calculo-explicacion {
+  font-size: 13px;
+  color: #374151;
+  margin: 0 0 10px 0;
+  font-style: italic;
+}
+
+.detalle-calculo-tabla {
+  width: 100%;
+  box-shadow: none;
+  font-size: 12px;
+}
+
+.detalle-calculo-tabla td, .detalle-calculo-tabla th {
+  padding: 6px 10px;
+}
+
+.legend-swatch-box {
+  width: 16px;
+  height: 12px;
+  border-radius: 2px;
+  display: inline-block;
+  border: 1px solid rgba(0,0,0,0.15);
 }

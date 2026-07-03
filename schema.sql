@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS zona_geografica (
     nombre VARCHAR(150) NOT NULL,
     descripcion VARCHAR(300),
     tarifa_zona DOUBLE PRECISION NOT NULL DEFAULT 0,
+    -- v2: poligono aproximado [[lat,lon], ...] construido manualmente (no oficial),
+    -- usado para determinar automaticamente la zona de un punto por punto-en-poligono.
+    -- Reemplazable en el futuro por un GeoJSON oficial de IDECA sin cambiar el esquema.
+    poligono JSONB,
     creado_en TIMESTAMP NOT NULL DEFAULT now()
 );
 
@@ -89,6 +93,9 @@ CREATE TABLE IF NOT EXISTS tarifa_transportista (
     id SERIAL PRIMARY KEY,
     transportista_id INTEGER NOT NULL REFERENCES transportista(id) ON DELETE CASCADE,
     metodo_tarifa_id INTEGER NOT NULL REFERENCES metodo_tarifa(id),
+    -- NULL = la tarifa aplica a cualquier tipo de camion (retrocompatible con v1/v2).
+    -- Si se especifica, esta tarifa solo aplica para ese tipo de camion puntual.
+    tipo_camion_id INTEGER REFERENCES tipo_camion(id),
     nombre VARCHAR(150) NOT NULL,
     valor_unitario DOUBLE PRECISION NOT NULL DEFAULT 0,
     unidad VARCHAR(30),
@@ -163,5 +170,6 @@ INSERT INTO metodo_tarifa (codigo, nombre, descripcion) VALUES
     ('POR_PARADA', 'Por numero de paradas', 'Tarifa por cada parada (cliente) visitada en la ruta'),
     ('POR_ZONA', 'Por zona de entrega', 'Tarifa de la zona mas alejada/costosa entre los clientes de la ruta'),
     ('POR_PESO_VOLUMEN', 'Por volumen o peso entregado', 'Tarifa por m3 o por kg entregado, sumando todos los clientes de la ruta'),
-    ('POR_TIEMPO_SERVICIO', 'Por tiempo de servicio', 'Tarifa por hora/minuto de atencion en clientes, sumada en la ruta')
+    ('POR_TIEMPO_SERVICIO', 'Por tiempo de servicio', 'Tarifa por hora/minuto de atencion en clientes, sumada en la ruta'),
+    ('POR_KILOMETRO', 'Por kilometro recorrido', 'Tarifa por km recorrido, segun la suma de distancia_km_tramo de las paradas de la ruta')
 ON CONFLICT (codigo) DO NOTHING;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../api/client.js'
+import DetalleCalculoTabla from '../components/DetalleCalculoTabla.jsx'
 
 const EJEMPLO_PLANIFICADA = {
   codigo_ruta: 'RUTA-DEMO-001',
@@ -54,6 +55,8 @@ export default function RutasPage() {
   const [jsonText, setJsonText] = useState(JSON.stringify(EJEMPLO_PLANIFICADA, null, 2))
   const [tipoImport, setTipoImport] = useState('planificada')
   const [mensaje, setMensaje] = useState(null)
+  const [rutaExpandidaId, setRutaExpandidaId] = useState(null)
+  const [rutaExpandidaDetalle, setRutaExpandidaDetalle] = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -65,6 +68,17 @@ export default function RutasPage() {
   useEffect(() => {
     load()
   }, [])
+
+  const toggleDetalle = async (rutaId) => {
+    if (rutaExpandidaId === rutaId) {
+      setRutaExpandidaId(null)
+      setRutaExpandidaDetalle(null)
+      return
+    }
+    setRutaExpandidaId(rutaId)
+    const res = await api.get(`/rutas/${rutaId}`)
+    setRutaExpandidaDetalle(res.data)
+  }
 
   const cargarEjemplo = () => {
     setJsonText(
@@ -133,6 +147,12 @@ export default function RutasPage() {
           Nota: para importar una ruta EJECUTADA debes referenciar el <code>ruta_planificada_id</code>{' '}
           de una ruta planificada existente (ver tabla abajo para obtener el ID).
         </p>
+        <p style={{ fontSize: 12, color: '#6b7280' }}>
+          Nota: si el transportista tiene tarifas distintas segun el tipo de camion, revisa la pantalla
+          "Tarifas de Flete" (columna "Tipo de Camion") para usar el <code>tarifa_transportista_id</code>{' '}
+          correcto para el <code>tipo_camion_id</code> de esta ruta. Si usas una tarifa restringida a un
+          camion distinto al de la ruta, la importacion sera rechazada con un error explicativo.
+        </p>
       </div>
 
       <div className="card">
@@ -151,24 +171,47 @@ export default function RutasPage() {
                 <th>Fecha</th>
                 <th>Estado</th>
                 <th>Costo Calculado</th>
+                <th>Detalle</th>
               </tr>
             </thead>
             <tbody>
               {rutas.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.id}</td>
-                  <td>{r.codigo_ruta}</td>
-                  <td>
-                    <span className={`badge ${r.es_planificada ? 'plan' : 'ejec'}`}>
-                      {r.es_planificada ? 'Planificada' : 'Ejecutada'}
-                    </span>
-                  </td>
-                  <td>{r.ruta_planificada_id ?? '-'}</td>
-                  <td>{r.transportista_id}</td>
-                  <td>{r.fecha}</td>
-                  <td>{r.estado}</td>
-                  <td>{r.costo_flete_calculado?.toLocaleString()}</td>
-                </tr>
+                <>
+                  <tr key={r.id}>
+                    <td>{r.id}</td>
+                    <td>{r.codigo_ruta}</td>
+                    <td>
+                      <span className={`badge ${r.es_planificada ? 'plan' : 'ejec'}`}>
+                        {r.es_planificada ? 'Planificada' : 'Ejecutada'}
+                      </span>
+                    </td>
+                    <td>{r.ruta_planificada_id ?? '-'}</td>
+                    <td>{r.transportista_id}</td>
+                    <td>{r.fecha}</td>
+                    <td>{r.estado}</td>
+                    <td>{r.costo_flete_calculado?.toLocaleString()}</td>
+                    <td>
+                      <button className="btn secondary" onClick={() => toggleDetalle(r.id)}>
+                        {rutaExpandidaId === r.id ? 'Ocultar' : 'Ver calculo'}
+                      </button>
+                    </td>
+                  </tr>
+                  {rutaExpandidaId === r.id && (
+                    <tr>
+                      <td colSpan={9}>
+                        {rutaExpandidaDetalle ? (
+                          <DetalleCalculoTabla
+                            detalleCalculo={rutaExpandidaDetalle.detalle_calculo}
+                            costoTotal={rutaExpandidaDetalle.costo_flete_calculado}
+                            tipoCamion={rutaExpandidaDetalle.tipo_camion}
+                          />
+                        ) : (
+                          <p>Cargando detalle...</p>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
             </tbody>
           </table>
