@@ -20,6 +20,10 @@ export default function TarifasPage() {
     activo: true,
   })
   const [zonasDetalle, setZonasDetalle] = useState({})
+  // v3: ediciones pendientes de la matriz zona x tipo de camion, sin guardar todavia.
+  // Clave: "transportistaId|camionKey|zonaId" (camionKey='' = cualquier camion) -> string.
+  const [pendientes, setPendientes] = useState({})
+  const [guardandoMatriz, setGuardandoMatriz] = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -109,13 +113,17 @@ export default function TarifasPage() {
   const nombreMetodo = (id) => metodos.find((m) => m.id === id)?.nombre || id
   const nombreTipoCamion = (id) => (id ? tiposCamion.find((tc) => tc.id === id)?.nombre || id : 'Cualquier camion')
 
-  // v3: matriz zona x tipo de camion para el metodo POR_ZONA. El modelo ya soporta
-  // esta combinacion sin cambios de backend: tipo_camion_id vive en la tarifa
-  // (TarifaTransportista) y zonas_detalle es propio de cada fila de tarifa, asi
-  // que basta con crear una tarifa POR_ZONA por cada tipo de camion. Esta vista
-  // solo agrupa lo ya creado para verlo de un vistazo y detectar huecos.
+  // v3: matriz editable zona x tipo de camion para el metodo POR_ZONA. El modelo ya
+  // soporta esta combinacion sin cambios de backend: tipo_camion_id vive en la tarifa
+  // (TarifaTransportista) y zonas_detalle es propio de cada fila de tarifa, asi que
+  // basta con crear/actualizar una tarifa POR_ZONA por cada tipo de camion. Se muestra
+  // un transportista por tabla, con TODOS los transportistas (no solo los que ya
+  // tienen una tarifa por zona) para poder crear la primera desde aqui mismo.
   const idMetodoZona = metodos.find((m) => m.codigo === 'POR_ZONA')?.id
   const tarifasPorZonaPorTransportista = {}
+  transportistas.forEach((t) => {
+    tarifasPorZonaPorTransportista[t.id] = []
+  })
   tarifas
     .filter((t) => t.metodo_tarifa_id === idMetodoZona)
     .forEach((t) => {
@@ -131,6 +139,85 @@ export default function TarifasPage() {
     if (!tarifa) return null
     const zd = (tarifa.zonas_detalle || []).find((z) => z.zona_geografica_id === zonaId)
     return zd ? zd.valor : null
+  }
+
+  const pendienteKey = (transportistaId, camionKey, zonaId) =>
+    `${transportistaId}|${camionKey}|${zonaId}`
+
+  const valorInputMatriz = (transportistaId, camionKey, zonaId, tarifasDelTr) => {
+    const key = pendienteKey(transportistaId, camionKey, zonaId)
+    if (key in pendientes) return pendientes[key]
+    const v = valorCelda(tarifasDelTr, camionKey === '' ? '' : Number(camionKey), zonaId)
+    return v === null ? '' : String(v)
+  }
+
+  const cambiarCeldaMatriz = (transportistaId, camionKey, zonaId, valor) => {
+    setPendientes((p) => ({ ...p, [pendienteKey(transportistaId, camionKey, zonaId)]: valor }))
+  }
+
+  const hayPendientesPara = (transportistaId) =>
+    Object.keys(pendientes).some((k) => k.startsWith(`${transportistaId}|`))
+
+  const guardarMatriz = async (transportistaId, tarifasDelTr) => {
+    const prefijo = `${transportistaId}|`
+    const grupos = {} // camionKey -> { zonaId: valorString }
+    Object.entries(pendientes).forEach(([key, valor]) => {
+      if (!key.startsWith(prefijo)) return
+      const [, camionKey, zonaId] = key.split('|')
+      grupos[camionKey] = grupos[camionKey] || {}
+      grupos[camionKey][zonaId] = valor
+    })
+    if (Object.keys(grupos).length === 0) return
+
+    setGuardandoMatriz(transportistaId)
+    try {
+      for (const [camionKey, edits] of Object.entries(grupos)) {
+        const camionId = camionKey === '' ? null : Number(camionKey)
+        const existente = tarifasDelTr.find((t) => (t.tipo_camion_id ?? '') === (camionKey === '' ? '' : Number(camionKey)))
+        const zonasMap = {}
+        ;(existente?.zonas_detalle || []).forEach((zd) => {
+          zonasMap[zd.zona_geografica_id] = zd.valor
+        })
+        Object.entries(edits).forEach(([zonaId, valor]) => {
+          if (valor === '') delete zonasMap[zonaId]
+          else zonasMap[zonaId] = Number(valor)
+        })
+        const payload = {
+          transportista_id: transportistaId,
+          metodo_tarifa_id: idMetodoZona,
+          tipo_camion_id: camionId,
+          nombre:
+            existente?.nombre ||
+            `Por zona - ${nombreTransportista(transportistaId)}${
+              camionId ? ' - ' + nombreTipoCamion(camionId) : ' (cualquier camion)'
+            }`,
+          valor_unitario: existente?.valor_unitario ?? 0,
+          unidad: existente?.unidad || 'ZONA',
+          activo: existente?.activo ?? true,
+          zonas_detalle: Object.entries(zonasMap).map(([zonaId, valor]) => ({
+            zona_geografica_id: Number(zonaId),
+            valor,
+          })),
+        }
+        if (existente) {
+          await api.put(`/tarifas-transportista/${existente.id}`, payload)
+        } else {
+          await api.post('/tarifas-transportista/', payload)
+        }
+      }
+      setPendientes((p) => {
+        const nuevo = { ...p }
+        Object.keys(nuevo).forEach((k) => {
+          if (k.startsWith(prefijo)) delete nuevo[k]
+        })
+        return nuevo
+      })
+      await load()
+    } catch (err) {
+      alert('Error guardando la matriz: ' + (err.response?.data?.detail || err.message))
+    } finally {
+      setGuardandoMatriz(null)
+    }
   }
 
   return (
@@ -265,50 +352,64 @@ export default function TarifasPage() {
         </div>
       )}
 
-      {!loading && zonas.length > 0 && Object.keys(tarifasPorZonaPorTransportista).length > 0 && (
+      {!loading && zonas.length > 0 && transportistas.length > 0 && (
         <div className="card">
           <strong>Matriz Zona x Tipo de Camion (metodo "Por zona")</strong>
           <div className="page-subtitle" style={{ margin: '4px 0 12px' }}>
-            Resumen de las tarifas POR_ZONA ya creadas, por transportista. Cada celda es el valor
-            de esa zona para ese tipo de camion (columna "Cualquier camion" = tarifa sin
-            restriccion de camion). "-" significa que no existe una tarifa para esa combinacion.
+            Edita directamente el valor de cada zona para cada tipo de camion (columna
+            "Cualquier camion" = tarifa sin restriccion de camion). Deja una celda vacia para
+            quitar ese valor. Los cambios de una fila de transportista se guardan juntos con el
+            boton "Guardar cambios" de esa tabla -- si la combinacion zona/camion no tenia tarifa
+            todavia, se crea una nueva automaticamente.
           </div>
-          {Object.entries(tarifasPorZonaPorTransportista).map(([transportistaId, tarifasDelTr]) => (
-            <div key={transportistaId} style={{ marginBottom: 16 }}>
-              <div style={{ fontWeight: 600, margin: '8px 0 4px' }}>
-                {nombreTransportista(Number(transportistaId))}
-              </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Zona</th>
-                    {columnasCamion.map((c) => (
-                      <th key={c.id || 'cualquiera'}>{c.nombre}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {zonas.map((z) => (
-                    <tr key={z.id}>
-                      <td>{z.nombre}</td>
-                      {columnasCamion.map((c) => {
-                        const valor = valorCelda(tarifasDelTr, c.id, z.id)
-                        return (
-                          <td key={c.id || 'cualquiera'} style={{ textAlign: 'center' }}>
-                            {valor === null ? (
-                              <span style={{ color: '#9ca3af' }}>-</span>
-                            ) : (
-                              valor.toLocaleString()
-                            )}
-                          </td>
-                        )
-                      })}
+          {Object.entries(tarifasPorZonaPorTransportista).map(([transportistaIdStr, tarifasDelTr]) => {
+            const transportistaId = Number(transportistaIdStr)
+            return (
+              <div key={transportistaId} style={{ marginBottom: 16 }}>
+                <div style={{ fontWeight: 600, margin: '8px 0 4px' }}>
+                  {nombreTransportista(transportistaId)}
+                </div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Zona</th>
+                      {columnasCamion.map((c) => (
+                        <th key={c.id === '' ? 'cualquiera' : c.id}>{c.nombre}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
+                  </thead>
+                  <tbody>
+                    {zonas.map((z) => (
+                      <tr key={z.id}>
+                        <td>{z.nombre}</td>
+                        {columnasCamion.map((c) => (
+                          <td key={c.id === '' ? 'cualquiera' : c.id} style={{ textAlign: 'center' }}>
+                            <input
+                              type="number"
+                              step="any"
+                              placeholder="-"
+                              style={{ width: 90 }}
+                              value={valorInputMatriz(transportistaId, c.id, z.id, tarifasDelTr)}
+                              onChange={(e) => cambiarCeldaMatriz(transportistaId, c.id, z.id, e.target.value)}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ marginTop: 8 }}
+                  disabled={!hayPendientesPara(transportistaId) || guardandoMatriz === transportistaId}
+                  onClick={() => guardarMatriz(transportistaId, tarifasDelTr)}
+                >
+                  {guardandoMatriz === transportistaId ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              </div>
+            )
+          })}
         </div>
       )}
 
