@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List, Any, Dict
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class ORMBase(BaseModel):
@@ -40,6 +40,14 @@ class UsuarioBase(BaseModel):
     empresa_id: Optional[int] = None
     activo: bool = True
 
+    # El correo se normaliza a minusculas siempre. Sin esto, un usuario creado
+    # como "Juan@x.com" no podia iniciar sesion escribiendo "juan@x.com" (la
+    # comparacion en el login es exacta) -- un bug real encontrado en produccion.
+    @field_validator("email")
+    @classmethod
+    def _normalizar_email(cls, v: str) -> str:
+        return v.strip().lower()
+
 
 class UsuarioCreate(UsuarioBase):
     password: str
@@ -65,6 +73,11 @@ class UsuarioOut(ORMBase):
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def _normalizar_email(cls, v: str) -> str:
+        return v.strip().lower()
 
 
 class LoginResponse(BaseModel):

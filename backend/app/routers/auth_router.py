@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import auth
@@ -11,7 +12,14 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/login", response_model=schemas.LoginResponse)
 def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
-    usuario = db.query(models.Usuario).filter(models.Usuario.email == payload.email).first()
+    # payload.email ya viene normalizado a minusculas (ver LoginRequest), pero
+    # se compara con func.lower() por si algun correo antiguo quedo con
+    # mayusculas en la base (ver migrate_v4_fix_email_lower.sql).
+    usuario = (
+        db.query(models.Usuario)
+        .filter(func.lower(models.Usuario.email) == payload.email)
+        .first()
+    )
     if not usuario or not usuario.activo or not auth.verify_password(payload.password, usuario.password_hash):
         raise HTTPException(status_code=401, detail="Correo o contrasena incorrectos")
     token = auth.crear_token(usuario)
