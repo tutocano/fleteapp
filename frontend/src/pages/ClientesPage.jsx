@@ -33,7 +33,6 @@ export default function ClientesPage() {
         { key: 'longitud', label: 'Longitud' },
       ]}
       fields={[
-        { key: 'empresa_id', label: 'Empresa ID', type: 'number', required: true },
         {
           key: 'tipo_cliente_id',
           label: 'Tipo Cliente',
@@ -53,7 +52,6 @@ export default function ClientesPage() {
         { key: 'direccion', label: 'Direccion' },
         { key: 'canal', label: 'Canal (texto libre)' },
       ]}
-      defaultValues={{ empresa_id: 1 }}
     />
   )
 }

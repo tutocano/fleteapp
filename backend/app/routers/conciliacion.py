@@ -1,14 +1,17 @@
 from collections import defaultdict
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app import auth
 from app.database import get_db
 from app.models import models
 from app.schemas import schemas
 
 router = APIRouter(prefix="/conciliacion", tags=["Conciliacion"])
+
+ROLES_LECTURA = ["EMPRESA_ADMIN", "INTERFAZ", "USUARIO_FINAL"]
 
 
 def _diff_pct(planificado, real):
@@ -18,10 +21,15 @@ def _diff_pct(planificado, real):
 
 
 @router.get("/rutas", response_model=List[schemas.ConciliacionRutaOut])
-def conciliacion_por_ruta(db: Session = Depends(get_db)):
-    rutas_planificadas = (
-        db.query(models.Ruta).filter(models.Ruta.es_planificada.is_(True)).all()
-    )
+def conciliacion_por_ruta(
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(auth.require_role(*ROLES_LECTURA)),
+    empresa_id: Optional[int] = Depends(auth.empresa_actual),
+):
+    q = db.query(models.Ruta).filter(models.Ruta.es_planificada.is_(True))
+    if empresa_id is not None:
+        q = q.filter(models.Ruta.empresa_id == empresa_id)
+    rutas_planificadas = q.all()
     resultado = []
     for rp in rutas_planificadas:
         ejecutada = (
@@ -53,10 +61,15 @@ def conciliacion_por_ruta(db: Session = Depends(get_db)):
 
 
 @router.get("/transportistas", response_model=List[schemas.ConciliacionTransportistaOut])
-def conciliacion_por_transportista(db: Session = Depends(get_db)):
-    rutas_planificadas = (
-        db.query(models.Ruta).filter(models.Ruta.es_planificada.is_(True)).all()
-    )
+def conciliacion_por_transportista(
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(auth.require_role(*ROLES_LECTURA)),
+    empresa_id: Optional[int] = Depends(auth.empresa_actual),
+):
+    q = db.query(models.Ruta).filter(models.Ruta.es_planificada.is_(True))
+    if empresa_id is not None:
+        q = q.filter(models.Ruta.empresa_id == empresa_id)
+    rutas_planificadas = q.all()
     agregados = defaultdict(lambda: {"nombre": "", "plan": 0.0, "real": 0.0, "n": 0})
 
     for rp in rutas_planificadas:

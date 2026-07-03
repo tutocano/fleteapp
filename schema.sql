@@ -13,25 +13,45 @@ CREATE TABLE IF NOT EXISTS empresa (
     creado_en TIMESTAMP NOT NULL DEFAULT now()
 );
 
+-- v4: usuarios, roles y multi-empresa. Un usuario tiene exactamente un rol y
+-- pertenece a una sola empresa (excepto SUPER_ADMIN, que no pertenece a
+-- ninguna en particular porque opera sobre todas). Ver PLAN_V4_USUARIOS_ROLES.md.
+CREATE TABLE IF NOT EXISTS usuario (
+    id SERIAL PRIMARY KEY,
+    nombre VARCHAR(200) NOT NULL,
+    email VARCHAR(200) NOT NULL UNIQUE,
+    password_hash VARCHAR(200) NOT NULL,
+    rol VARCHAR(30) NOT NULL, -- SUPER_ADMIN | EMPRESA_ADMIN | INTERFAZ | USUARIO_FINAL
+    empresa_id INTEGER REFERENCES empresa(id) ON DELETE CASCADE, -- NULL solo para SUPER_ADMIN
+    activo BOOLEAN NOT NULL DEFAULT true,
+    creado_en TIMESTAMP NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS centro_distribucion (
     id SERIAL PRIMARY KEY,
     empresa_id INTEGER NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
     nombre VARCHAR(200) NOT NULL,
-    codigo VARCHAR(50) UNIQUE,
+    codigo VARCHAR(50),
     latitud DOUBLE PRECISION NOT NULL,
     longitud DOUBLE PRECISION NOT NULL,
     direccion VARCHAR(300),
-    creado_en TIMESTAMP NOT NULL DEFAULT now()
+    creado_en TIMESTAMP NOT NULL DEFAULT now(),
+    UNIQUE(empresa_id, codigo)
 );
 
+-- v4: TipoCliente pasa de catalogo global a catalogo por empresa.
 CREATE TABLE IF NOT EXISTS tipo_cliente (
     id SERIAL PRIMARY KEY,
-    nombre VARCHAR(100) NOT NULL UNIQUE,
-    descripcion VARCHAR(300)
+    empresa_id INTEGER NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+    nombre VARCHAR(100) NOT NULL,
+    descripcion VARCHAR(300),
+    UNIQUE(empresa_id, nombre)
 );
 
+-- v4: ZonaGeografica pasa de catalogo global a catalogo por empresa.
 CREATE TABLE IF NOT EXISTS zona_geografica (
     id SERIAL PRIMARY KEY,
+    empresa_id INTEGER NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
     nombre VARCHAR(150) NOT NULL,
     descripcion VARCHAR(300),
     tarifa_zona DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -48,16 +68,19 @@ CREATE TABLE IF NOT EXISTS cliente (
     tipo_cliente_id INTEGER REFERENCES tipo_cliente(id),
     zona_geografica_id INTEGER REFERENCES zona_geografica(id),
     nombre VARCHAR(200) NOT NULL,
-    codigo VARCHAR(50) UNIQUE,
+    codigo VARCHAR(50),
     latitud DOUBLE PRECISION NOT NULL,
     longitud DOUBLE PRECISION NOT NULL,
     direccion VARCHAR(300),
     canal VARCHAR(100),
-    creado_en TIMESTAMP NOT NULL DEFAULT now()
+    creado_en TIMESTAMP NOT NULL DEFAULT now(),
+    UNIQUE(empresa_id, codigo)
 );
 
+-- v4: TipoCamion pasa de catalogo global a catalogo por empresa.
 CREATE TABLE IF NOT EXISTS tipo_camion (
     id SERIAL PRIMARY KEY,
+    empresa_id INTEGER NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
     nombre VARCHAR(100) NOT NULL,
     capacidad_peso_kg DOUBLE PRECISION NOT NULL,
     capacidad_volumen_m3 DOUBLE PRECISION NOT NULL
@@ -74,7 +97,8 @@ CREATE TABLE IF NOT EXISTS transportista (
 );
 
 -- v3: relacion informativa (no bloquea import de rutas) de que zonas atiende
--- cada transportista.
+-- cada transportista. No tiene empresa_id propio: se valida a traves de
+-- transportista_id/zona_geografica_id, que ya son de la misma empresa.
 CREATE TABLE IF NOT EXISTS transportista_zona_cobertura (
     id SERIAL PRIMARY KEY,
     transportista_id INTEGER NOT NULL REFERENCES transportista(id) ON DELETE CASCADE,
@@ -82,8 +106,10 @@ CREATE TABLE IF NOT EXISTS transportista_zona_cobertura (
     UNIQUE(transportista_id, zona_geografica_id)
 );
 
+-- v4: empresa_id agregado por consistencia (ya era derivable via transportista_id).
 CREATE TABLE IF NOT EXISTS flota (
     id SERIAL PRIMARY KEY,
+    empresa_id INTEGER NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
     transportista_id INTEGER NOT NULL REFERENCES transportista(id) ON DELETE CASCADE,
     tipo_camion_id INTEGER NOT NULL REFERENCES tipo_camion(id),
     placa VARCHAR(20),
@@ -91,15 +117,21 @@ CREATE TABLE IF NOT EXISTS flota (
     activo BOOLEAN NOT NULL DEFAULT true
 );
 
+-- v4: MetodoTarifa pasa de catalogo global a catalogo por empresa (se clonan
+-- los 6 metodos fijos automaticamente cada vez que se crea una empresa nueva).
 CREATE TABLE IF NOT EXISTS metodo_tarifa (
     id SERIAL PRIMARY KEY,
-    codigo VARCHAR(50) NOT NULL UNIQUE,
+    empresa_id INTEGER NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+    codigo VARCHAR(50) NOT NULL,
     nombre VARCHAR(150) NOT NULL,
-    descripcion VARCHAR(400)
+    descripcion VARCHAR(400),
+    UNIQUE(empresa_id, codigo)
 );
 
+-- v4: empresa_id agregado por consistencia (ya era derivable via transportista_id).
 CREATE TABLE IF NOT EXISTS tarifa_transportista (
     id SERIAL PRIMARY KEY,
+    empresa_id INTEGER NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
     transportista_id INTEGER NOT NULL REFERENCES transportista(id) ON DELETE CASCADE,
     metodo_tarifa_id INTEGER NOT NULL REFERENCES metodo_tarifa(id),
     -- NULL = la tarifa aplica a cualquier tipo de camion (retrocompatible con v1/v2).
@@ -120,16 +152,21 @@ CREATE TABLE IF NOT EXISTS tarifa_zona_detalle (
     UNIQUE(tarifa_transportista_id, zona_geografica_id)
 );
 
+-- v4: Producto pasa de catalogo global a catalogo por empresa.
 CREATE TABLE IF NOT EXISTS producto (
     id SERIAL PRIMARY KEY,
+    empresa_id INTEGER NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
     nombre VARCHAR(200) NOT NULL,
-    codigo VARCHAR(50) UNIQUE,
+    codigo VARCHAR(50),
     peso_unitario_kg DOUBLE PRECISION NOT NULL,
-    volumen_unitario_m3 DOUBLE PRECISION NOT NULL
+    volumen_unitario_m3 DOUBLE PRECISION NOT NULL,
+    UNIQUE(empresa_id, codigo)
 );
 
+-- v4: empresa_id agregado por consistencia (ya era derivable via centro_distribucion_id).
 CREATE TABLE IF NOT EXISTS ruta (
     id SERIAL PRIMARY KEY,
+    empresa_id INTEGER NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
     codigo_ruta VARCHAR(50) NOT NULL,
     es_planificada BOOLEAN NOT NULL DEFAULT true,
     ruta_planificada_id INTEGER REFERENCES ruta(id) ON DELETE SET NULL,
@@ -147,6 +184,7 @@ CREATE TABLE IF NOT EXISTS ruta (
 
 CREATE INDEX IF NOT EXISTS idx_ruta_planificada_id ON ruta(ruta_planificada_id);
 CREATE INDEX IF NOT EXISTS idx_ruta_transportista ON ruta(transportista_id);
+CREATE INDEX IF NOT EXISTS idx_ruta_empresa ON ruta(empresa_id);
 
 CREATE TABLE IF NOT EXISTS parada_ruta (
     id SERIAL PRIMARY KEY,
@@ -177,12 +215,7 @@ CREATE TABLE IF NOT EXISTS pedido_cliente_ruta (
 
 CREATE INDEX IF NOT EXISTS idx_pedido_parada_ruta_id ON pedido_cliente_ruta(parada_ruta_id);
 
--- Metodos de tarifa fijos (seed minimo de catalogo)
-INSERT INTO metodo_tarifa (codigo, nombre, descripcion) VALUES
-    ('POR_VIAJE', 'Por viaje', 'Tarifa fija por viaje completo, sin importar paradas ni distancia'),
-    ('POR_PARADA', 'Por numero de paradas', 'Tarifa por cada parada (cliente) visitada en la ruta'),
-    ('POR_ZONA', 'Por zona de entrega', 'Tarifa de la zona mas alejada/costosa entre los clientes de la ruta'),
-    ('POR_PESO_VOLUMEN', 'Por volumen o peso entregado', 'Tarifa por m3 o por kg entregado, sumando todos los clientes de la ruta'),
-    ('POR_TIEMPO_SERVICIO', 'Por tiempo de servicio', 'Tarifa por hora/minuto de atencion en clientes, sumada en la ruta'),
-    ('POR_KILOMETRO', 'Por kilometro recorrido', 'Tarifa por km recorrido, segun la suma de distancia_km_tramo de las paradas de la ruta')
-ON CONFLICT (codigo) DO NOTHING;
+-- Nota v4: los metodos de tarifa YA NO se siembran aqui de forma global -- se
+-- clonan automaticamente (6 metodos fijos) cada vez que se crea una empresa
+-- nueva via POST /api/empresas (ver app/routers/maestros.py,
+-- sembrar_metodos_tarifa_para_empresa).

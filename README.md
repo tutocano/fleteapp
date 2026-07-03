@@ -254,6 +254,61 @@ test de backend + build de frontend + seed completo) antes de publicar.
    ademas el costo resultante con cada uno -- asi se puede detectar si una ruta se
    planifico o ejecuto con datos de distancia/tiempo poco realistas.
 
+## Novedades v4
+
+Version 4 agrega autenticacion, 4 roles de usuario y aislamiento de datos por empresa
+(multi-tenant: una sola instancia, una sola base de datos, todas las empresas conviven
+ahi). Ver `PLAN_V4_USUARIOS_ROLES.md` para el diseno completo. Probado localmente
+(smoke test de backend con TestClient, servidor real + curl, build de frontend) antes
+de publicar.
+
+1. **Usuarios y roles.** Nueva tabla `usuario` (login por correo+contrasena, hash con
+   bcrypt, JWT sin refresh token, expira a las 12 horas). 4 roles fijos: `SUPER_ADMIN`
+   (crea empresas y usuarios, ve/edita cualquier empresa), `EMPRESA_ADMIN` (CRUD completo
+   de maestros dentro de su empresa), `INTERFAZ` (importa rutas planificadas/ejecutadas),
+   `USUARIO_FINAL` (solo lectura: Mapa de Rutas, Mapa General, Conciliacion). Un usuario
+   pertenece a una sola empresa (excepto `SUPER_ADMIN`, que no pertenece a ninguna en
+   particular).
+
+2. **`empresa_id` en todos los catalogos.** `TipoCliente`, `ZonaGeografica`, `TipoCamion`,
+   `Producto` y `MetodoTarifa` pasan de catalogos globales a catalogos por empresa (los 6
+   metodos de tarifa se clonan automaticamente al crear una empresa nueva). `Flota`,
+   `TarifaTransportista` y `Ruta` tambien reciben `empresa_id` por consistencia del filtro,
+   aunque ya eran derivables via su transportista/CEDI.
+
+3. **Aislamiento centralizado.** El `empresa_id` nunca se confia si viene del cliente
+   (body/query) salvo para `SUPER_ADMIN` -- siempre se toma del usuario autenticado, via
+   la dependencia `empresa_actual` (backend/app/auth.py) reusada en todos los endpoints.
+   `SUPER_ADMIN` puede pasar `?empresa_id=` para navegar/corregir datos de una empresa
+   puntual, o dejarlo vacio para ver todas.
+
+4. **Frontend con login.** Pantalla de login, interceptor de axios que adjunta el token y
+   redirige a login si expira, menu lateral y rutas filtradas por rol, pantalla `Usuarios`
+   (solo `SUPER_ADMIN`) y un selector "viendo datos de la empresa X" en la cabecera (solo
+   `SUPER_ADMIN`).
+
+### Migrar produccion a v4
+
+```bash
+psql "<external DATABASE_URL>/flete_db" -f backend/migrate_v4_alter.sql
+# desplegar el codigo nuevo, luego:
+docker run -it --rm \
+  -e DATABASE_URL="<external DATABASE_URL>/flete_db" \
+  -e SUPER_ADMIN_EMAIL="tu-correo@ejemplo.com" \
+  -e SUPER_ADMIN_PASSWORD="una-contrasena-fuerte" \
+  -v "$(pwd)/backend:/app" -w /app python:3.11-slim \
+  bash -c "pip install -q -r requirements.txt && python migrate_v4_backfill.py"
+```
+
+Esto asigna los datos existentes a la empresa real ya creada, crea una "Empresa Demo 2"
+con su propio set de datos autocontenido (para probar que el aislamiento funciona de
+verdad), y crea el primer usuario `SUPER_ADMIN`.
+
+**Nota:** `seed.py` (usado para poblar una instalacion nueva desde cero) todavia no fue
+actualizado para autenticarse contra v4 -- para datos de prueba en local, usa
+`migrate_v4_backfill.py` despues de crear la primera empresa manualmente (crea su propio
+set de datos para "Empresa Demo 2" sin pasar por `seed.py`).
+
 ### Resetear y re-sembrar la base de datos (v2)
 
 ```bash

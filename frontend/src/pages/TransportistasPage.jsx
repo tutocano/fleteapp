@@ -14,13 +14,11 @@ export default function TransportistasPage() {
         { key: 'telefono', label: 'Telefono' },
       ]}
       fields={[
-        { key: 'empresa_id', label: 'Empresa ID', type: 'number', required: true },
         { key: 'nombre', label: 'Nombre', required: true },
         { key: 'nit', label: 'NIT' },
         { key: 'contacto', label: 'Contacto' },
         { key: 'telefono', label: 'Telefono' },
       ]}
-      defaultValues={{ empresa_id: 1 }}
     />
   )
 }

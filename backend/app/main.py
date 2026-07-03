@@ -3,35 +3,16 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import Base, engine, SessionLocal
+from app.database import Base, engine
 from app.models import models  # noqa: F401 - asegura registro de modelos
-from app.routers import maestros, rutas, conciliacion
+from app.routers import maestros, rutas, conciliacion, auth_router, usuarios
 
 Base.metadata.create_all(bind=engine)
 
-_METODOS_TARIFA_BASE = [
-    ("POR_VIAJE", "Por viaje", "Tarifa fija por viaje completo, sin importar paradas ni distancia"),
-    ("POR_PARADA", "Por numero de paradas", "Tarifa por cada parada (cliente) visitada en la ruta"),
-    ("POR_ZONA", "Por zona de entrega", "Tarifa de la zona mas alejada/costosa entre los clientes de la ruta"),
-    ("POR_PESO_VOLUMEN", "Por volumen o peso entregado", "Tarifa por m3 o por kg entregado, sumando todos los clientes de la ruta"),
-    ("POR_TIEMPO_SERVICIO", "Por tiempo de servicio", "Tarifa por hora/minuto de atencion en clientes, sumada en la ruta"),
-    ("POR_KILOMETRO", "Por kilometro recorrido", "Tarifa por km recorrido, segun la suma de distancia_km_tramo de las paradas de la ruta"),
-]
-
-
-def _sembrar_catalogo_metodos_tarifa():
-    db = SessionLocal()
-    try:
-        existentes = {m.codigo for m in db.query(models.MetodoTarifa).all()}
-        for codigo, nombre, descripcion in _METODOS_TARIFA_BASE:
-            if codigo not in existentes:
-                db.add(models.MetodoTarifa(codigo=codigo, nombre=nombre, descripcion=descripcion))
-        db.commit()
-    finally:
-        db.close()
-
-
-_sembrar_catalogo_metodos_tarifa()
+# v4: el catalogo de metodos de tarifa ya no se siembra de forma global -- ahora
+# MetodoTarifa es por empresa, y se siembra automaticamente cada vez que se crea
+# una empresa (ver sembrar_metodos_tarifa_para_empresa en routers/maestros.py,
+# invocado desde el endpoint POST /api/empresas).
 
 app = FastAPI(
     title="Fleteapp API",
@@ -61,6 +42,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router.router, prefix="/api")
+app.include_router(usuarios.router, prefix="/api")
 app.include_router(maestros.empresa_router, prefix="/api")
 app.include_router(maestros.cedi_router, prefix="/api")
 app.include_router(maestros.tipo_cliente_router, prefix="/api")

@@ -15,14 +15,12 @@ export default function CedisPage() {
         { key: 'direccion', label: 'Direccion' },
       ]}
       fields={[
-        { key: 'empresa_id', label: 'Empresa ID', type: 'number', required: true },
         { key: 'nombre', label: 'Nombre', required: true },
         { key: 'codigo', label: 'Codigo' },
         { key: 'latitud', label: 'Latitud', type: 'number', required: true },
         { key: 'longitud', label: 'Longitud', type: 'number', required: true },
         { key: 'direccion', label: 'Direccion' },
       ]}
-      defaultValues={{ empresa_id: 1 }}
     />
   )
 }

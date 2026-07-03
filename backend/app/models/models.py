@@ -31,13 +31,41 @@ class Empresa(Base):
     transportistas = relationship("Transportista", back_populates="empresa")
 
 
+# v4: roles fijos del sistema. Un usuario tiene exactamente UNO de estos roles.
+# SUPER_ADMIN no pertenece a ninguna empresa (empresa_id NULL); los otros 3 roles
+# pertenecen exactamente a una empresa (empresa_id obligatorio).
+ROLES_VALIDOS = ["SUPER_ADMIN", "EMPRESA_ADMIN", "INTERFAZ", "USUARIO_FINAL"]
+
+
+class Usuario(Base):
+    __tablename__ = "usuario"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(200), nullable=False)
+    email = Column(String(200), nullable=False, unique=True, index=True)
+    password_hash = Column(String(200), nullable=False)
+    # Ver ROLES_VALIDOS. Se guarda como string simple (no enum nativo de Postgres)
+    # para no complicar migraciones futuras si se agregan roles.
+    rol = Column(String(30), nullable=False)
+    # NULL solo para SUPER_ADMIN. Para los otros 3 roles es obligatorio (validado en
+    # el schema/endpoint, no a nivel de columna, para poder dar un mensaje claro).
+    empresa_id = Column(Integer, ForeignKey("empresa.id"), nullable=True)
+    activo = Column(Boolean, nullable=False, default=True)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+
+    empresa = relationship("Empresa")
+
+
 class CentroDistribucion(Base):
     __tablename__ = "centro_distribucion"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "codigo", name="uq_centro_distribucion_empresa_codigo"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     empresa_id = Column(Integer, ForeignKey("empresa.id"), nullable=False)
     nombre = Column(String(200), nullable=False)
-    codigo = Column(String(50), unique=True)
+    codigo = Column(String(50))
     latitud = Column(Float, nullable=False)
     longitud = Column(Float, nullable=False)
     direccion = Column(String(300))
@@ -48,16 +76,23 @@ class CentroDistribucion(Base):
 
 class TipoCliente(Base):
     __tablename__ = "tipo_cliente"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "nombre", name="uq_tipo_cliente_empresa_nombre"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    nombre = Column(String(100), nullable=False, unique=True)
+    empresa_id = Column(Integer, ForeignKey("empresa.id"), nullable=False)
+    nombre = Column(String(100), nullable=False)
     descripcion = Column(String(300))
+
+    empresa = relationship("Empresa")
 
 
 class ZonaGeografica(Base):
     __tablename__ = "zona_geografica"
 
     id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresa.id"), nullable=False)
     nombre = Column(String(150), nullable=False)
     descripcion = Column(String(300))
     tarifa_zona = Column(Float, nullable=False, default=0)
@@ -72,16 +107,21 @@ class ZonaGeografica(Base):
     poligono = Column(JSON, nullable=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
 
+    empresa = relationship("Empresa")
+
 
 class Cliente(Base):
     __tablename__ = "cliente"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "codigo", name="uq_cliente_empresa_codigo"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     empresa_id = Column(Integer, ForeignKey("empresa.id"), nullable=False)
     tipo_cliente_id = Column(Integer, ForeignKey("tipo_cliente.id"))
     zona_geografica_id = Column(Integer, ForeignKey("zona_geografica.id"))
     nombre = Column(String(200), nullable=False)
-    codigo = Column(String(50), unique=True)
+    codigo = Column(String(50))
     latitud = Column(Float, nullable=False)
     longitud = Column(Float, nullable=False)
     direccion = Column(String(300))
@@ -97,9 +137,12 @@ class TipoCamion(Base):
     __tablename__ = "tipo_camion"
 
     id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresa.id"), nullable=False)
     nombre = Column(String(100), nullable=False)
     capacidad_peso_kg = Column(Float, nullable=False)
     capacidad_volumen_m3 = Column(Float, nullable=False)
+
+    empresa = relationship("Empresa")
 
 
 class Transportista(Base):
@@ -145,29 +188,46 @@ class Flota(Base):
     __tablename__ = "flota"
 
     id = Column(Integer, primary_key=True, index=True)
+    # v4: agregado por consistencia del filtro por empresa (ya era derivable via
+    # transportista_id -> transportista.empresa_id). Debe coincidir siempre con la
+    # empresa del transportista; se valida al crear/actualizar.
+    empresa_id = Column(Integer, ForeignKey("empresa.id"), nullable=False)
     transportista_id = Column(Integer, ForeignKey("transportista.id"), nullable=False)
     tipo_camion_id = Column(Integer, ForeignKey("tipo_camion.id"), nullable=False)
     placa = Column(String(20))
     descripcion = Column(String(200))
     activo = Column(Boolean, default=True)
 
+    empresa = relationship("Empresa")
     transportista = relationship("Transportista", back_populates="flota")
     tipo_camion = relationship("TipoCamion")
 
 
 class MetodoTarifa(Base):
     __tablename__ = "metodo_tarifa"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "codigo", name="uq_metodo_tarifa_empresa_codigo"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    codigo = Column(String(50), nullable=False, unique=True)
+    # v4: por empresa (cada empresa nueva recibe una copia de los 6 metodos al
+    # crearse -- ver maestros.py). El motor de calculo (flete_calculo.py) sigue
+    # identificando el metodo por su `codigo`, no por `id`, asi que no cambia.
+    empresa_id = Column(Integer, ForeignKey("empresa.id"), nullable=False)
+    codigo = Column(String(50), nullable=False)
     nombre = Column(String(150), nullable=False)
     descripcion = Column(String(400))
+
+    empresa = relationship("Empresa")
 
 
 class TarifaTransportista(Base):
     __tablename__ = "tarifa_transportista"
 
     id = Column(Integer, primary_key=True, index=True)
+    # v4: agregado por consistencia del filtro por empresa (ya era derivable via
+    # transportista_id). Debe coincidir siempre con la empresa del transportista.
+    empresa_id = Column(Integer, ForeignKey("empresa.id"), nullable=False)
     transportista_id = Column(Integer, ForeignKey("transportista.id"), nullable=False)
     metodo_tarifa_id = Column(Integer, ForeignKey("metodo_tarifa.id"), nullable=False)
     # Si es NULL, la tarifa aplica a cualquier tipo de camion (comportamiento v1,
@@ -184,6 +244,7 @@ class TarifaTransportista(Base):
     activo = Column(Boolean, default=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
 
+    empresa = relationship("Empresa")
     transportista = relationship("Transportista", back_populates="tarifas")
     metodo_tarifa = relationship("MetodoTarifa")
     tipo_camion = relationship("TipoCamion")
@@ -211,18 +272,29 @@ class TarifaZonaDetalle(Base):
 
 class Producto(Base):
     __tablename__ = "producto"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "codigo", name="uq_producto_empresa_codigo"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresa.id"), nullable=False)
     nombre = Column(String(200), nullable=False)
-    codigo = Column(String(50), unique=True)
+    codigo = Column(String(50))
     peso_unitario_kg = Column(Float, nullable=False)
     volumen_unitario_m3 = Column(Float, nullable=False)
+
+    empresa = relationship("Empresa")
 
 
 class Ruta(Base):
     __tablename__ = "ruta"
 
     id = Column(Integer, primary_key=True, index=True)
+    # v4: agregado por consistencia del filtro por empresa (ya era derivable via
+    # centro_distribucion_id -> centro_distribucion.empresa_id). Se fija al crear la
+    # ruta a partir del CEDI, y se valida que transportista/tarifa/tipo_camion sean
+    # de la misma empresa.
+    empresa_id = Column(Integer, ForeignKey("empresa.id"), nullable=False)
     codigo_ruta = Column(String(50), nullable=False)
     es_planificada = Column(Boolean, nullable=False, default=True)
     ruta_planificada_id = Column(Integer, ForeignKey("ruta.id"), nullable=True)
@@ -241,6 +313,7 @@ class Ruta(Base):
     detalle_calculo = Column(JSON, nullable=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
 
+    empresa = relationship("Empresa")
     centro_distribucion = relationship("CentroDistribucion")
     transportista = relationship("Transportista")
     tarifa_transportista = relationship("TarifaTransportista")

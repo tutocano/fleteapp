@@ -1,7 +1,25 @@
 import { useEffect, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polygon } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polygon, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import api from '../api/client.js'
+import { useAuth } from '../auth/AuthContext.jsx'
+
+// Ver MapaPage.jsx: MapContainer solo aplica `center` en el montaje inicial,
+// asi que si los datos cambian (ej. SUPER_ADMIN cambia de empresa) el mapa no
+// se recentra solo. Este componente lo reencuadra cada vez que cambian los puntos.
+function AutoEncuadre({ puntos }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!puntos || puntos.length === 0) return
+    if (puntos.length === 1) {
+      map.setView(puntos[0], 13)
+    } else {
+      map.fitBounds(puntos, { padding: [40, 40] })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, JSON.stringify(puntos)])
+  return null
+}
 
 // Mismo cuidado que en MapaPage.jsx: nunca usar icon={undefined} en un Marker
 // de react-leaflet (crashea al remover el marker). Se definen iconos explicitos.
@@ -27,12 +45,14 @@ const clienteIcon = new L.Icon.Default()
 const ZONA_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#14b8a6']
 
 export default function MapaGeneralPage() {
+  const { empresaSeleccionada } = useAuth()
   const [clientes, setClientes] = useState([])
   const [cedis, setCedis] = useState([])
   const [zonas, setZonas] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    setLoading(true)
     Promise.all([
       api.get('/clientes/'),
       api.get('/centros-distribucion/'),
@@ -43,7 +63,9 @@ export default function MapaGeneralPage() {
       setZonas(zon.data)
       setLoading(false)
     })
-  }, [])
+    // Si un SUPER_ADMIN cambia la empresa seleccionada en la cabecera, hay que
+    // volver a cargar -- si no, se queda viendo los datos de la empresa anterior.
+  }, [empresaSeleccionada])
 
   const center = cedis.length > 0 ? [cedis[0].latitud, cedis[0].longitud] : [4.65, -74.1]
 
@@ -84,6 +106,12 @@ export default function MapaGeneralPage() {
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
               maxZoom={19}
+            />
+            <AutoEncuadre
+              puntos={[
+                ...cedis.map((c) => [c.latitud, c.longitud]),
+                ...clientes.map((c) => [c.latitud, c.longitud]),
+              ]}
             />
 
             {zonas.map((z, idx) =>

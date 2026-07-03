@@ -24,9 +24,57 @@ class EmpresaOut(ORMBase, EmpresaBase):
     id: int
 
 
+# ---------- Usuario / Auth (v4) ----------
+# empresa_id NUNCA se acepta del cliente en la creacion/edicion de entidades de
+# maestros (Centro, Cliente, Transportista, etc.) -- siempre se toma del usuario
+# autenticado en el backend. Por eso los *Base/*Create de abajo ya NO incluyen
+# empresa_id; solo los *Out lo exponen (para que el frontend, especialmente
+# SUPER_ADMIN viendo varias empresas, sepa de cual es cada registro).
+ROLES_VALIDOS = ["SUPER_ADMIN", "EMPRESA_ADMIN", "INTERFAZ", "USUARIO_FINAL"]
+
+
+class UsuarioBase(BaseModel):
+    nombre: str
+    email: str
+    rol: str
+    empresa_id: Optional[int] = None
+    activo: bool = True
+
+
+class UsuarioCreate(UsuarioBase):
+    password: str
+
+
+class UsuarioUpdate(BaseModel):
+    nombre: Optional[str] = None
+    rol: Optional[str] = None
+    empresa_id: Optional[int] = None
+    activo: Optional[bool] = None
+    password: Optional[str] = None  # si se envia, se cambia la contrasena
+
+
+class UsuarioOut(ORMBase):
+    id: int
+    nombre: str
+    email: str
+    rol: str
+    empresa_id: Optional[int] = None
+    activo: bool
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    usuario: UsuarioOut
+
+
 # ---------- Centro Distribucion ----------
 class CentroDistribucionBase(BaseModel):
-    empresa_id: int
     nombre: str
     codigo: Optional[str] = None
     latitud: float
@@ -40,6 +88,7 @@ class CentroDistribucionCreate(CentroDistribucionBase):
 
 class CentroDistribucionOut(ORMBase, CentroDistribucionBase):
     id: int
+    empresa_id: int
 
 
 # ---------- Tipo Cliente ----------
@@ -54,6 +103,7 @@ class TipoClienteCreate(TipoClienteBase):
 
 class TipoClienteOut(ORMBase, TipoClienteBase):
     id: int
+    empresa_id: int
 
 
 # ---------- Zona Geografica ----------
@@ -73,11 +123,11 @@ class ZonaGeograficaCreate(ZonaGeograficaBase):
 
 class ZonaGeograficaOut(ORMBase, ZonaGeograficaBase):
     id: int
+    empresa_id: int
 
 
 # ---------- Cliente ----------
 class ClienteBase(BaseModel):
-    empresa_id: int
     tipo_cliente_id: Optional[int] = None
     zona_geografica_id: Optional[int] = None
     nombre: str
@@ -94,6 +144,7 @@ class ClienteCreate(ClienteBase):
 
 class ClienteOut(ORMBase, ClienteBase):
     id: int
+    empresa_id: int
 
 
 # ---------- Tipo Camion ----------
@@ -109,11 +160,11 @@ class TipoCamionCreate(TipoCamionBase):
 
 class TipoCamionOut(ORMBase, TipoCamionBase):
     id: int
+    empresa_id: int
 
 
 # ---------- Transportista ----------
 class TransportistaBase(BaseModel):
-    empresa_id: int
     nombre: str
     nit: Optional[str] = None
     contacto: Optional[str] = None
@@ -126,6 +177,7 @@ class TransportistaCreate(TransportistaBase):
 
 class TransportistaOut(ORMBase, TransportistaBase):
     id: int
+    empresa_id: int
     zonas_cobertura: List["TransportistaZonaCoberturaOut"] = []
 
 
@@ -156,11 +208,17 @@ class FlotaCreate(FlotaBase):
 
 class FlotaOut(ORMBase, FlotaBase):
     id: int
+    empresa_id: int
 
 
 # ---------- Metodo Tarifa ----------
+# Sin Create/Update publico: se siembra automaticamente (6 metodos fijos) al crear
+# una empresa nueva (ver maestros.py). El motor de calculo identifica el metodo por
+# `codigo`, no por `id`, asi que cada empresa tiene su propia fila con el mismo
+# codigo pero id distinto.
 class MetodoTarifaOut(ORMBase):
     id: int
+    empresa_id: int
     codigo: str
     nombre: str
     descripcion: Optional[str] = None
@@ -201,6 +259,7 @@ class TarifaTransportistaCreate(TarifaTransportistaBase):
 
 class TarifaTransportistaOut(ORMBase, TarifaTransportistaBase):
     id: int
+    empresa_id: int
     zonas_detalle: List[TarifaZonaDetalleOut] = []
     tipo_camion: Optional[TipoCamionOut] = None
 
@@ -219,6 +278,7 @@ class ProductoCreate(ProductoBase):
 
 class ProductoOut(ORMBase, ProductoBase):
     id: int
+    empresa_id: int
 
 
 # ---------- Import de rutas (planificada / ejecutada) ----------
@@ -280,6 +340,7 @@ class ParadaOut(ORMBase):
 
 class RutaOut(ORMBase):
     id: int
+    empresa_id: int
     codigo_ruta: str
     es_planificada: bool
     ruta_planificada_id: Optional[int] = None
@@ -299,6 +360,7 @@ class RutaOut(ORMBase):
 
 class RutaListOut(ORMBase):
     id: int
+    empresa_id: int
     codigo_ruta: str
     es_planificada: bool
     ruta_planificada_id: Optional[int] = None

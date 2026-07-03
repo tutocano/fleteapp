@@ -4,6 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
+from app import auth
 from app.database import get_db
 from app.models import models
 from app.schemas import schemas
@@ -12,15 +13,36 @@ from app.services.distance_connector import calcular_distancia_tiempo
 
 router = APIRouter(prefix="/rutas", tags=["Ruta"])
 
+# Importar rutas (uso diario) lo hacen INTERFAZ y EMPRESA_ADMIN. Ver/consultar
+# rutas (mapa, lista, detalle) lo pueden hacer los 3 roles de una empresa.
+ROLES_IMPORTAR = ["INTERFAZ", "EMPRESA_ADMIN"]
+ROLES_LECTURA = ["EMPRESA_ADMIN", "INTERFAZ", "USUARIO_FINAL"]
 
-def _importar_ruta(payload: schemas.RutaImport, es_planificada: bool, db: Session) -> models.Ruta:
+
+def _pertenece(obj, empresa_id: Optional[int], tag: str):
+    if obj is None or (empresa_id is not None and obj.empresa_id != empresa_id):
+        raise HTTPException(status_code=404, detail=f"{tag} no encontrado")
+    return obj
+
+
+def _importar_ruta(
+    payload: schemas.RutaImport, es_planificada: bool, db: Session, empresa_id: int
+) -> models.Ruta:
     centro = db.query(models.CentroDistribucion).get(payload.centro_distribucion_id)
-    if not centro:
-        raise HTTPException(status_code=404, detail="Centro de distribucion no encontrado")
+    _pertenece(centro, empresa_id, "Centro de distribucion")
 
     tarifa = db.query(models.TarifaTransportista).get(payload.tarifa_transportista_id)
-    if not tarifa:
-        raise HTTPException(status_code=404, detail="Tarifa de transportista no encontrada")
+    _pertenece(tarifa, empresa_id, "Tarifa de transportista")
+
+    transportista = db.query(models.Transportista).get(payload.transportista_id)
+    _pertenece(transportista, empresa_id, "Transportista")
+
+    tipo_camion = db.query(models.TipoCamion).get(payload.tipo_camion_id)
+    _pertenece(tipo_camion, empresa_id, "Tipo de camion")
+
+    if payload.flota_id is not None:
+        flota = db.query(models.Flota).get(payload.flota_id)
+        _pertenece(flota, empresa_id, "Flota")
 
     # Si la tarifa esta restringida a un tipo de camion especifico, la ruta debe
     # usar ese mismo tipo de camion. Si tarifa.tipo_camion_id es None, la tarifa
@@ -46,7 +68,12 @@ def _importar_ruta(payload: schemas.RutaImport, es_planificada: bool, db: Sessio
             detail="Una ruta ejecutada debe referenciar su ruta_planificada_id",
         )
 
+    if payload.ruta_planificada_id is not None:
+        rp = db.query(models.Ruta).get(payload.ruta_planificada_id)
+        _pertenece(rp, empresa_id, "Ruta planificada")
+
     ruta = models.Ruta(
+        empresa_id=empresa_id,
         codigo_ruta=payload.codigo_ruta,
         es_planificada=es_planificada,
         ruta_planificada_id=payload.ruta_planificada_id,
@@ -66,10 +93,7 @@ def _importar_ruta(payload: schemas.RutaImport, es_planificada: bool, db: Sessio
 
     for parada_in in paradas_ordenadas:
         cliente = db.query(models.Cliente).get(parada_in.cliente_id)
-        if not cliente:
-            raise HTTPException(
-                status_code=404, detail=f"Cliente {parada_in.cliente_id} no encontrado"
-            )
+        _pertenece(cliente, empresa_id, f"Cliente {parada_in.cliente_id}")
 
         distancia_km = parada_in.distancia_km_tramo
         tiempo_min = parada_in.tiempo_transito_min_tramo
@@ -106,10 +130,7 @@ def _importar_ruta(payload: schemas.RutaImport, es_planificada: bool, db: Sessio
 
         for pedido_in in parada_in.pedidos:
             producto = db.query(models.Producto).get(pedido_in.producto_id)
-            if not producto:
-                raise HTTPException(
-                    status_code=404, detail=f"Producto {pedido_in.producto_id} no encontrado"
-                )
+            _pertenece(producto, empresa_id, f"Producto {pedido_in.producto_id}")
             peso_kg = (
                 pedido_in.peso_kg
                 if pedido_in.peso_kg is not None
@@ -141,27 +162,57 @@ def _importar_ruta(payload: schemas.RutaImport, es_planificada: bool, db: Sessio
 
 
 @router.post("/importar/planificada", response_model=schemas.RutaOut)
-def importar_ruta_planificada(payload: schemas.RutaImport, db: Session = Depends(get_db)):
-    ruta = _importar_ruta(payload, es_planificada=True, db=db)
-    return ruta
+def importar_ruta_planificada(
+    payload: schemas.RutaImport,
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(auth.require_role(*ROLES_IMPORTAR)),
+    empresa_id: Optional[int] = Depends(auth.empresa_actual),
+):
+    if empresa_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Como SUPER_ADMIN, indica ?empresa_id= para saber a que empresa pertenece esta ruta",
+        )
+    return _importar_ruta(payload, es_planificada=True, db=db, empresa_id=empresa_id)
 
 
 @router.post("/importar/ejecutada", response_model=schemas.RutaOut)
-def importar_ruta_ejecutada(payload: schemas.RutaImport, db: Session = Depends(get_db)):
-    ruta = _importar_ruta(payload, es_planificada=False, db=db)
-    return ruta
+def importar_ruta_ejecutada(
+    payload: schemas.RutaImport,
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(auth.require_role(*ROLES_IMPORTAR)),
+    empresa_id: Optional[int] = Depends(auth.empresa_actual),
+):
+    if empresa_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Como SUPER_ADMIN, indica ?empresa_id= para saber a que empresa pertenece esta ruta",
+        )
+    return _importar_ruta(payload, es_planificada=False, db=db, empresa_id=empresa_id)
 
 
 @router.get("/", response_model=List[schemas.RutaListOut])
-def listar_rutas(es_planificada: Optional[bool] = None, db: Session = Depends(get_db)):
+def listar_rutas(
+    es_planificada: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(auth.require_role(*ROLES_LECTURA)),
+    empresa_id: Optional[int] = Depends(auth.empresa_actual),
+):
     q = db.query(models.Ruta)
+    if empresa_id is not None:
+        q = q.filter(models.Ruta.empresa_id == empresa_id)
     if es_planificada is not None:
         q = q.filter(models.Ruta.es_planificada == es_planificada)
     return q.order_by(models.Ruta.id.desc()).all()
 
 
 @router.get("/{ruta_id}", response_model=schemas.RutaOut)
-def obtener_ruta(ruta_id: int, db: Session = Depends(get_db)):
+def obtener_ruta(
+    ruta_id: int,
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(auth.require_role(*ROLES_LECTURA)),
+    empresa_id: Optional[int] = Depends(auth.empresa_actual),
+):
     ruta = (
         db.query(models.Ruta)
         .options(joinedload(models.Ruta.paradas).joinedload(models.ParadaRuta.pedidos))
@@ -170,23 +221,30 @@ def obtener_ruta(ruta_id: int, db: Session = Depends(get_db)):
         .options(joinedload(models.Ruta.tipo_camion))
         .get(ruta_id)
     )
-    if not ruta:
-        raise HTTPException(status_code=404, detail="Ruta no encontrada")
-    return ruta
+    return _pertenece(ruta, empresa_id, "Ruta")
 
 
 @router.post("/{ruta_id}/recalcular", response_model=schemas.RutaOut)
-def recalcular_ruta(ruta_id: int, db: Session = Depends(get_db)):
+def recalcular_ruta(
+    ruta_id: int,
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(auth.require_role(*ROLES_IMPORTAR)),
+    empresa_id: Optional[int] = Depends(auth.empresa_actual),
+):
     ruta = db.query(models.Ruta).get(ruta_id)
-    if not ruta:
-        raise HTTPException(status_code=404, detail="Ruta no encontrada")
+    _pertenece(ruta, empresa_id, "Ruta")
     calcular_y_guardar(db, ruta)
     db.refresh(ruta)
     return ruta
 
 
 @router.get("/{ruta_id}/mapa")
-def datos_mapa_ruta(ruta_id: int, db: Session = Depends(get_db)):
+def datos_mapa_ruta(
+    ruta_id: int,
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(auth.require_role(*ROLES_LECTURA)),
+    empresa_id: Optional[int] = Depends(auth.empresa_actual),
+):
     """Devuelve los puntos (CEDI + clientes en secuencia) para pintar la polilinea en el mapa."""
     ruta = (
         db.query(models.Ruta)
@@ -194,8 +252,7 @@ def datos_mapa_ruta(ruta_id: int, db: Session = Depends(get_db)):
         .options(joinedload(models.Ruta.centro_distribucion))
         .get(ruta_id)
     )
-    if not ruta:
-        raise HTTPException(status_code=404, detail="Ruta no encontrada")
+    _pertenece(ruta, empresa_id, "Ruta")
 
     puntos = [
         {

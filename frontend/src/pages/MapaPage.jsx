@@ -1,7 +1,28 @@
 import { useEffect, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polyline, Polygon } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Polygon, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import api from '../api/client.js'
+import { useAuth } from '../auth/AuthContext.jsx'
+
+// react-leaflet solo usa el prop `center`/`zoom` de MapContainer en el montaje
+// inicial -- si despues cambian (ej. el usuario elige una ruta en Medellin
+// cuando el mapa ya se monto centrado en Bogota), el mapa NO se recentra solo,
+// y los marcadores quedan fuera del area visible (parece que "no se ve nada").
+// Este componente hijo usa useMap() para reencuadrar el mapa cada vez que
+// cambian los puntos a mostrar.
+function AutoEncuadre({ puntos }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!puntos || puntos.length === 0) return
+    if (puntos.length === 1) {
+      map.setView(puntos[0], 13)
+    } else {
+      map.fitBounds(puntos, { padding: [40, 40] })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, JSON.stringify(puntos)])
+  return null
+}
 
 // Fix de iconos default de Leaflet con bundlers tipo Vite
 delete L.Icon.Default.prototype._getIconUrl
@@ -32,6 +53,7 @@ const clienteIcon = new L.Icon.Default()
 const ZONA_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#14b8a6']
 
 export default function MapaPage() {
+  const { empresaSeleccionada } = useAuth()
   const [rutasPlan, setRutasPlan] = useState([])
   const [rutaSeleccionada, setRutaSeleccionada] = useState(null)
   const [datosPlan, setDatosPlan] = useState(null)
@@ -42,7 +64,14 @@ export default function MapaPage() {
   useEffect(() => {
     api.get('/rutas/?es_planificada=true').then((res) => setRutasPlan(res.data))
     api.get('/zonas-geograficas/').then((res) => setZonas(res.data))
-  }, [])
+    // Si un SUPER_ADMIN cambia la empresa seleccionada en la cabecera, la ruta
+    // que estaba viendo ya no aplica -- se limpia la seleccion para no mezclar
+    // datos de una empresa con el mapa de otra.
+    setRutaSeleccionada(null)
+    setDatosPlan(null)
+    setDatosEjec(null)
+    setRutaEjecId(null)
+  }, [empresaSeleccionada])
 
   const cargarRuta = async (rutaPlanId) => {
     setRutaSeleccionada(rutaPlanId)
@@ -115,6 +144,7 @@ export default function MapaPage() {
             url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
             maxZoom={19}
           />
+          <AutoEncuadre puntos={[...polylinePlan, ...polylineEjec]} />
           {zonas.map((z, idx) =>
             z.poligono && z.poligono.length > 2 ? (
               <Polygon
