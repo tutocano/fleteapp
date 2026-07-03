@@ -147,6 +147,26 @@ automaticamente usando el conector pluggable (Haversine por defecto).
 Para importar la ruta EJECUTADA correspondiente, usa `POST /api/rutas/importar/ejecutada` con
 el mismo formato, agregando `"ruta_planificada_id": <id de la ruta planificada>`.
 
+## Importacion de rutas (formato CSV, v4.1)
+
+Alternativa al JSON de arriba para cargar de un tiron TODAS las rutas de un dia completo
+de operacion (varias rutas, cada una con varias paradas y varios productos), identificando
+cada entidad por su codigo/nombre de negocio en vez de por ID interno. Disponible en la misma
+pantalla "Rutas" (pestaña "CSV"), o directo contra `POST /api/rutas/importar-csv/planificada`
+y `POST /api/rutas/importar-csv/ejecutada` (multipart, campo `archivo`).
+
+Una fila del CSV = un pedido dentro de una parada dentro de una ruta. Columnas obligatorias:
+`codigo_ruta, centro_distribucion_codigo, transportista_nombre, tarifa_nombre,
+tipo_camion_nombre, secuencia, cliente_codigo, producto_codigo, cantidad`. Columnas opcionales:
+`fecha, flota_placa, tiempo_servicio_min, distancia_km_tramo, tiempo_transito_min_tramo,
+hora_llegada_estimada, hora_llegada_real, peso_kg, volumen_m3`.
+
+Para el CSV de ejecutada no se indica ningun ID: el `codigo_ruta` debe coincidir con el de una
+ruta planificada ya importada en la misma empresa (se busca automaticamente). Ver
+`backend/app/services/csv_import.py` para el detalle de la logica, y
+`backend/ejemplos_csv/` para 4 archivos de ejemplo reales (uno planificada + uno ejecutada, para
+cada una de las 2 empresas cargadas de fabrica) listos para subir tal cual.
+
 ## Limitaciones conocidas del prototipo
 
 - No usa PostGIS; lat/lon se guardan como floats simples (suficiente para prototipo, sin

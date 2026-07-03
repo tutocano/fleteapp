@@ -1,0 +1,5 @@
+codigo_ruta,fecha,centro_distribucion_codigo,transportista_nombre,tarifa_nombre,tipo_camion_nombre,flota_placa,secuencia,cliente_codigo,tiempo_servicio_min,distancia_km_tramo,tiempo_transito_min_tramo,hora_llegada_estimada,hora_llegada_real,producto_codigo,cantidad,peso_kg,volumen_m3
+RUTA-CSV-001,2026-07-03 07:00,CEDI-NORTE,TransRapido S.A.S.,Tarifa por parada - TransRapido,Turbo,,1,CLI-001,20,,,,,PROD-001,50,,
+RUTA-CSV-001,2026-07-03 07:00,CEDI-NORTE,TransRapido S.A.S.,Tarifa por parada - TransRapido,Turbo,,2,CLI-003,25,,,,,PROD-001,30,,
+RUTA-CSV-002,2026-07-03 08:00,CEDI-SUR,Transportes del Valle,Tarifa plana por viaje - Transportes del Valle,NHR,,1,CLI-006,20,,,,,PROD-003,15,,
+RUTA-CSV-002,2026-07-03 08:00,CEDI-SUR,Transportes del Valle,Tarifa plana por viaje - Transportes del Valle,NHR,,2,CLI-009,20,,,,,PROD-003,15,,

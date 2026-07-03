@@ -1,0 +1,5 @@
+codigo_ruta,fecha,centro_distribucion_codigo,transportista_nombre,tarifa_nombre,tipo_camion_nombre,flota_placa,secuencia,cliente_codigo,tiempo_servicio_min,distancia_km_tramo,tiempo_transito_min_tramo,hora_llegada_estimada,hora_llegada_real,producto_codigo,cantidad,peso_kg,volumen_m3
+RUTA-CSV-DEMO2-001,2026-07-03 07:00,CEDI-MED,Transportes Demo 2,Tarifa plana por viaje - Demo 2,NHR,,1,CLI-D2-001,20,,,,,DEMO-001,10,,
+RUTA-CSV-DEMO2-001,2026-07-03 07:00,CEDI-MED,Transportes Demo 2,Tarifa plana por viaje - Demo 2,NHR,,2,CLI-D2-002,20,,,,,DEMO-001,10,,
+RUTA-CSV-DEMO2-002,2026-07-03 08:00,CEDI-MED,Rapiflete Antioquia,Tarifa por zona - Rapiflete,Sencillo,,1,CLI-D2-003,20,,,,,DEMO-002,20,,
+RUTA-CSV-DEMO2-002,2026-07-03 08:00,CEDI-MED,Rapiflete Antioquia,Tarifa por zona - Rapiflete,Sencillo,,2,CLI-D2-004,20,,,,,DEMO-002,20,,

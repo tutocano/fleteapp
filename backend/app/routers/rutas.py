@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session, joinedload
 
 from app import auth
@@ -10,6 +10,7 @@ from app.models import models
 from app.schemas import schemas
 from app.services.flete_calculo import calcular_y_guardar
 from app.services.distance_connector import calcular_distancia_tiempo
+from app.services.csv_import import EncabezadoCSVError, parsear_rutas_csv
 
 router = APIRouter(prefix="/rutas", tags=["Ruta"])
 
@@ -189,6 +190,76 @@ def importar_ruta_ejecutada(
             detail="Como SUPER_ADMIN, indica ?empresa_id= para saber a que empresa pertenece esta ruta",
         )
     return _importar_ruta(payload, es_planificada=False, db=db, empresa_id=empresa_id)
+
+
+def _importar_csv(
+    archivo: UploadFile, es_planificada: bool, db: Session, empresa_id: Optional[int]
+) -> dict:
+    if empresa_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Como SUPER_ADMIN, indica ?empresa_id= para saber a que empresa pertenece este archivo",
+        )
+    if archivo.filename and not archivo.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="El archivo debe ser un .csv")
+
+    contenido = archivo.file.read()
+    try:
+        rutas_parseadas, errores_filas = parsear_rutas_csv(contenido, db, empresa_id, es_planificada)
+    except EncabezadoCSVError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    resultados = []
+    for codigo_ruta, ruta_import in rutas_parseadas:
+        try:
+            ruta = _importar_ruta(ruta_import, es_planificada=es_planificada, db=db, empresa_id=empresa_id)
+            resultados.append(
+                {
+                    "codigo_ruta": codigo_ruta,
+                    "ok": True,
+                    "ruta_id": ruta.id,
+                    "costo_flete_calculado": ruta.costo_flete_calculado,
+                }
+            )
+        except HTTPException as e:
+            db.rollback()
+            resultados.append({"codigo_ruta": codigo_ruta, "ok": False, "error": e.detail})
+        except Exception as e:  # no dejar que una ruta con error dane el resto del lote
+            db.rollback()
+            resultados.append({"codigo_ruta": codigo_ruta, "ok": False, "error": str(e)})
+
+    codigos_con_error_de_fila = {e["codigo_ruta"] for e in errores_filas if e["codigo_ruta"]}
+    return {
+        "rutas_importadas": resultados,
+        "errores_filas": errores_filas,
+        "total_ok": sum(1 for r in resultados if r["ok"]),
+        "total_error": sum(1 for r in resultados if not r["ok"]) + len(codigos_con_error_de_fila),
+    }
+
+
+@router.post("/importar-csv/planificada")
+def importar_csv_planificada(
+    archivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(auth.require_role(*ROLES_IMPORTAR)),
+    empresa_id: Optional[int] = Depends(auth.empresa_actual),
+):
+    """Carga masiva de rutas PLANIFICADAS de un dia via CSV (ver services/csv_import.py
+    para el formato de columnas esperado)."""
+    return _importar_csv(archivo, es_planificada=True, db=db, empresa_id=empresa_id)
+
+
+@router.post("/importar-csv/ejecutada")
+def importar_csv_ejecutada(
+    archivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    usuario: models.Usuario = Depends(auth.require_role(*ROLES_IMPORTAR)),
+    empresa_id: Optional[int] = Depends(auth.empresa_actual),
+):
+    """Carga masiva de rutas EJECUTADAS de un dia via CSV. Cada codigo_ruta del CSV
+    debe coincidir con el de una ruta PLANIFICADA ya existente en la misma empresa
+    (se busca automaticamente, no hay que indicar ningun ID)."""
+    return _importar_csv(archivo, es_planificada=False, db=db, empresa_id=empresa_id)
 
 
 @router.get("/", response_model=List[schemas.RutaListOut])
