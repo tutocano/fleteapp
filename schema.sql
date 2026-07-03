@@ -73,6 +73,15 @@ CREATE TABLE IF NOT EXISTS transportista (
     creado_en TIMESTAMP NOT NULL DEFAULT now()
 );
 
+-- v3: relacion informativa (no bloquea import de rutas) de que zonas atiende
+-- cada transportista.
+CREATE TABLE IF NOT EXISTS transportista_zona_cobertura (
+    id SERIAL PRIMARY KEY,
+    transportista_id INTEGER NOT NULL REFERENCES transportista(id) ON DELETE CASCADE,
+    zona_geografica_id INTEGER NOT NULL REFERENCES zona_geografica(id) ON DELETE CASCADE,
+    UNIQUE(transportista_id, zona_geografica_id)
+);
+
 CREATE TABLE IF NOT EXISTS flota (
     id SERIAL PRIMARY KEY,
     transportista_id INTEGER NOT NULL REFERENCES transportista(id) ON DELETE CASCADE,

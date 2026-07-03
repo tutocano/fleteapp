@@ -3,6 +3,7 @@ import EmpresaPage from './pages/EmpresaPage.jsx'
 import CedisPage from './pages/CedisPage.jsx'
 import ClientesPage from './pages/ClientesPage.jsx'
 import TransportistasPage from './pages/TransportistasPage.jsx'
+import CoberturaZonasPage from './pages/CoberturaZonasPage.jsx'
 import TarifasPage from './pages/TarifasPage.jsx'
 import ZonasPage from './pages/ZonasPage.jsx'
 import ProductosPage from './pages/ProductosPage.jsx'
@@ -26,6 +27,7 @@ function App() {
         <NavLink to="/tipos-camion">Tipos de Camion</NavLink>
         <NavLink to="/flota">Flota</NavLink>
         <NavLink to="/transportistas">Transportistas</NavLink>
+        <NavLink to="/cobertura-zonas">Cobertura de Zonas</NavLink>
         <NavLink to="/tarifas">Tarifas de Flete</NavLink>
         <NavLink to="/productos">Productos</NavLink>
         <div className="sidebar-group">Operacion</div>
@@ -43,6 +45,7 @@ function App() {
           <Route path="/tipos-camion" element={<TiposCamionPage />} />
           <Route path="/flota" element={<FlotaPage />} />
           <Route path="/transportistas" element={<TransportistasPage />} />
+          <Route path="/cobertura-zonas" element={<CoberturaZonasPage />} />
           <Route path="/tarifas" element={<TarifasPage />} />
           <Route path="/productos" element={<ProductosPage />} />
           <Route path="/rutas" element={<RutasPage />} />

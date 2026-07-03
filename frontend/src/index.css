@@ -245,3 +245,16 @@ tr:hover td {
   display: inline-block;
   border: 1px solid rgba(0,0,0,0.15);
 }
+
+/* ---- v3: dibujo de poligonos de zona (ZonasPage / PoligonoDrawMap) ----
+   Editor propio (no leaflet-draw): icono de vertice chico y bajo control
+   total nuestro, sin depender del CSS de ningun plugin externo. */
+.zona-vertice-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #2563eb;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+}

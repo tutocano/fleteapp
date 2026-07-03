@@ -116,6 +116,29 @@ class Transportista(Base):
     empresa = relationship("Empresa", back_populates="transportistas")
     flota = relationship("Flota", back_populates="transportista")
     tarifas = relationship("TarifaTransportista", back_populates="transportista")
+    zonas_cobertura = relationship(
+        "TransportistaZonaCobertura", back_populates="transportista", cascade="all, delete-orphan"
+    )
+
+
+class TransportistaZonaCobertura(Base):
+    """v3: relacion muchos-a-muchos entre transportista y zona geografica que indica
+    que zonas atiende cada transportista. Es puramente informativa/de consulta (no
+    bloquea la importacion de rutas) -- decision explicita del usuario para v3."""
+
+    __tablename__ = "transportista_zona_cobertura"
+    __table_args__ = (
+        UniqueConstraint(
+            "transportista_id", "zona_geografica_id", name="uq_transportista_zona_cobertura"
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    transportista_id = Column(Integer, ForeignKey("transportista.id"), nullable=False)
+    zona_geografica_id = Column(Integer, ForeignKey("zona_geografica.id"), nullable=False)
+
+    transportista = relationship("Transportista", back_populates="zonas_cobertura")
+    zona_geografica = relationship("ZonaGeografica")
 
 
 class Flota(Base):

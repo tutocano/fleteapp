@@ -47,6 +47,14 @@ def get(path):
     return r.json()
 
 
+def put(path, payload):
+    r = httpx.put(f"{BASE_URL}{path}", json=payload, timeout=15.0, trust_env=False)
+    if r.status_code >= 300:
+        print(f"ERROR PUT {path}: {r.status_code} {r.text}")
+        r.raise_for_status()
+    return r.json()
+
+
 def main():
     wait_for_api()
 
@@ -236,6 +244,22 @@ def main():
     post("/flota/", {"transportista_id": trans1["id"], "tipo_camion_id": tipo_turbo["id"], "placa": "TRA-101", "descripcion": "Turbo 1", "activo": True})
     post("/flota/", {"transportista_id": trans2["id"], "tipo_camion_id": tipo_sencillo["id"], "placa": "LOG-201", "descripcion": "Sencillo 1", "activo": True})
     post("/flota/", {"transportista_id": trans3["id"], "tipo_camion_id": tipo_nhr["id"], "placa": "VAL-301", "descripcion": "NHR 1", "activo": True})
+
+    print("\n== Cobertura de zonas por transportista (v3, informativa) ==")
+    # TransRapido: cubre todo Bogota.
+    put(f"/transportistas/{trans1['id']}/zonas-cobertura", {
+        "zona_geografica_ids": [zona_centro["id"], zona_norte["id"], zona_sur["id"], zona_occidente["id"]],
+    })
+    # LogiCarga: solo zonas donde tiene tarifa por zona definida (norte/centro/sur/occidente
+    # tambien, pero aqui se deja un ejemplo realista de cobertura parcial).
+    put(f"/transportistas/{trans2['id']}/zonas-cobertura", {
+        "zona_geografica_ids": [zona_centro["id"], zona_norte["id"], zona_sur["id"]],
+    })
+    # Transportes del Valle: solo zona sur y occidente (ej. no llega al norte de la ciudad).
+    put(f"/transportistas/{trans3['id']}/zonas-cobertura", {
+        "zona_geografica_ids": [zona_sur["id"], zona_occidente["id"]],
+    })
+    print("Cobertura de zonas registrada para los 3 transportistas")
 
     # Tarifa 1: TransRapido - Por viaje (general, aplica a cualquier tipo de camion
     # que no tenga una tarifa mas especifica definida abajo)

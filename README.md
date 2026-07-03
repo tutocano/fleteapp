@@ -216,6 +216,34 @@ en git), sin romper compatibilidad con las rutas y calculos existentes.
    logica de calculo de ninguno, porque el calculo siempre usa el `valor_unitario`/`zonas_detalle`
    de la fila de tarifa ya seleccionada.
 
+## Novedades v3
+
+Version 3 agrega 3 capacidades sobre v2 (protegido con tag `v2.0` en git), sin cambiar
+el comportamiento de rutas/calculos/conciliacion existentes. Todo v3 se probo localmente
+(smoke test de backend + build de frontend) y esta pendiente de publicar hasta que se
+confirme en pruebas manuales con `docker compose`.
+
+1. **Dibujo interactivo de poligonos de zona.** La pagina `Zonas Geograficas` ya no usa
+   el formulario generico: incluye un mapa con las herramientas de dibujo de
+   `leaflet-draw` para trazar el poligono de cada zona directamente con el mouse (no
+   tiene que coincidir con ninguna division administrativa oficial). Se puede editar o
+   borrar el poligono existente al editar una zona. El campo `poligono` sigue siendo el
+   mismo JSON `[[lat,lon], ...]` de v2, asi que el punto-en-poligono de POR_ZONA sigue
+   funcionando igual.
+
+2. **Cobertura de zonas por transportista.** Nueva tabla `transportista_zona_cobertura`
+   (muchos a muchos) y pantalla `Cobertura de Zonas` con una matriz de checkboxes
+   (transportista x zona) para marcar que zonas atiende cada transportista. Es
+   **informativa** (decision explicita del usuario): no bloquea el import de rutas, sirve
+   como referencia para decidir que transportista asignar a una ruta.
+
+3. **Tarifas por combinacion de zona y tipo de camion.** No requirio cambios de esquema:
+   `TarifaTransportista.tipo_camion_id` (v2) y `TarifaZonaDetalle` (v2) ya eran
+   independientes entre si, asi que una tarifa POR_ZONA restringida a un tipo de camion
+   ya tenia su propia tabla de valores por zona. La pagina `Tarifas de Flete` ahora
+   muestra un resumen en forma de matriz (zona x tipo de camion) por transportista para
+   ver de un vistazo que combinaciones ya estan definidas y cuales faltan.
+
 ### Resetear y re-sembrar la base de datos (v2)
 
 ```bash

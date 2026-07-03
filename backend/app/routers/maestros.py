@@ -190,3 +190,66 @@ def eliminar_tarifa(tarifa_id: int, db: Session = Depends(get_db)):
     db.delete(obj)
     db.commit()
     return {"ok": True}
+
+
+# Cobertura de zonas por transportista (v3): relacion informativa, no bloquea
+# import de rutas. GET devuelve la lista actual; PUT reemplaza el conjunto completo
+# (patron "checklist" comodo para el frontend: enviar todos los ids marcados).
+cobertura_router = APIRouter(prefix="/transportistas", tags=["Cobertura"])
+
+
+@cobertura_router.get(
+    "/{transportista_id}/zonas-cobertura",
+    response_model=List[schemas.TransportistaZonaCoberturaOut],
+)
+def listar_cobertura(transportista_id: int, db: Session = Depends(get_db)):
+    transportista = db.query(models.Transportista).get(transportista_id)
+    if not transportista:
+        raise HTTPException(status_code=404, detail="Transportista no encontrado")
+    return (
+        db.query(models.TransportistaZonaCobertura)
+        .filter(models.TransportistaZonaCobertura.transportista_id == transportista_id)
+        .all()
+    )
+
+
+@cobertura_router.put(
+    "/{transportista_id}/zonas-cobertura",
+    response_model=List[schemas.TransportistaZonaCoberturaOut],
+)
+def actualizar_cobertura(
+    transportista_id: int,
+    payload: schemas.ZonasCoberturaUpdate,
+    db: Session = Depends(get_db),
+):
+    transportista = db.query(models.Transportista).get(transportista_id)
+    if not transportista:
+        raise HTTPException(status_code=404, detail="Transportista no encontrado")
+
+    ids_validos = {
+        z.id
+        for z in db.query(models.ZonaGeografica.id)
+        .filter(models.ZonaGeografica.id.in_(payload.zona_geografica_ids))
+        .all()
+    }
+    faltantes = set(payload.zona_geografica_ids) - ids_validos
+    if faltantes:
+        raise HTTPException(
+            status_code=400, detail=f"Zonas geograficas inexistentes: {sorted(faltantes)}"
+        )
+
+    db.query(models.TransportistaZonaCobertura).filter(
+        models.TransportistaZonaCobertura.transportista_id == transportista_id
+    ).delete()
+    for zona_id in payload.zona_geografica_ids:
+        db.add(
+            models.TransportistaZonaCobertura(
+                transportista_id=transportista_id, zona_geografica_id=zona_id
+            )
+        )
+    db.commit()
+    return (
+        db.query(models.TransportistaZonaCobertura)
+        .filter(models.TransportistaZonaCobertura.transportista_id == transportista_id)
+        .all()
+    )

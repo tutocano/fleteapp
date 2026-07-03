@@ -109,6 +109,30 @@ export default function TarifasPage() {
   const nombreMetodo = (id) => metodos.find((m) => m.id === id)?.nombre || id
   const nombreTipoCamion = (id) => (id ? tiposCamion.find((tc) => tc.id === id)?.nombre || id : 'Cualquier camion')
 
+  // v3: matriz zona x tipo de camion para el metodo POR_ZONA. El modelo ya soporta
+  // esta combinacion sin cambios de backend: tipo_camion_id vive en la tarifa
+  // (TarifaTransportista) y zonas_detalle es propio de cada fila de tarifa, asi
+  // que basta con crear una tarifa POR_ZONA por cada tipo de camion. Esta vista
+  // solo agrupa lo ya creado para verlo de un vistazo y detectar huecos.
+  const idMetodoZona = metodos.find((m) => m.codigo === 'POR_ZONA')?.id
+  const tarifasPorZonaPorTransportista = {}
+  tarifas
+    .filter((t) => t.metodo_tarifa_id === idMetodoZona)
+    .forEach((t) => {
+      tarifasPorZonaPorTransportista[t.transportista_id] =
+        tarifasPorZonaPorTransportista[t.transportista_id] || []
+      tarifasPorZonaPorTransportista[t.transportista_id].push(t)
+    })
+  const columnasCamion = [{ id: '', nombre: 'Cualquier camion' }, ...tiposCamion]
+  const valorCelda = (tarifasDelTransportista, camionId, zonaId) => {
+    const tarifa = tarifasDelTransportista.find(
+      (t) => (t.tipo_camion_id ?? '') === camionId
+    )
+    if (!tarifa) return null
+    const zd = (tarifa.zonas_detalle || []).find((z) => z.zona_geografica_id === zonaId)
+    return zd ? zd.valor : null
+  }
+
   return (
     <div>
       <div className="page-title">Tarifas de Transportista</div>
@@ -238,6 +262,53 @@ export default function TarifasPage() {
               Cancelar
             </button>
           </form>
+        </div>
+      )}
+
+      {!loading && zonas.length > 0 && Object.keys(tarifasPorZonaPorTransportista).length > 0 && (
+        <div className="card">
+          <strong>Matriz Zona x Tipo de Camion (metodo "Por zona")</strong>
+          <div className="page-subtitle" style={{ margin: '4px 0 12px' }}>
+            Resumen de las tarifas POR_ZONA ya creadas, por transportista. Cada celda es el valor
+            de esa zona para ese tipo de camion (columna "Cualquier camion" = tarifa sin
+            restriccion de camion). "-" significa que no existe una tarifa para esa combinacion.
+          </div>
+          {Object.entries(tarifasPorZonaPorTransportista).map(([transportistaId, tarifasDelTr]) => (
+            <div key={transportistaId} style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 600, margin: '8px 0 4px' }}>
+                {nombreTransportista(Number(transportistaId))}
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Zona</th>
+                    {columnasCamion.map((c) => (
+                      <th key={c.id || 'cualquiera'}>{c.nombre}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {zonas.map((z) => (
+                    <tr key={z.id}>
+                      <td>{z.nombre}</td>
+                      {columnasCamion.map((c) => {
+                        const valor = valorCelda(tarifasDelTr, c.id, z.id)
+                        return (
+                          <td key={c.id || 'cualquiera'} style={{ textAlign: 'center' }}>
+                            {valor === null ? (
+                              <span style={{ color: '#9ca3af' }}>-</span>
+                            ) : (
+                              valor.toLocaleString()
+                            )}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
         </div>
       )}
 

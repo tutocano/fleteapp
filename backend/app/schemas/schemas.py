@@ -126,6 +126,19 @@ class TransportistaCreate(TransportistaBase):
 
 class TransportistaOut(ORMBase, TransportistaBase):
     id: int
+    zonas_cobertura: List["TransportistaZonaCoberturaOut"] = []
+
+
+# ---------- Cobertura de zona por transportista (v3, informativa) ----------
+class TransportistaZonaCoberturaOut(ORMBase):
+    id: int
+    transportista_id: int
+    zona_geografica_id: int
+    zona_geografica: Optional[ZonaGeograficaOut] = None
+
+
+class ZonasCoberturaUpdate(BaseModel):
+    zona_geografica_ids: List[int]
 
 
 # ---------- Flota ----------
