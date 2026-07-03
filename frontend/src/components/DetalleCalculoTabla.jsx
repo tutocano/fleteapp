@@ -72,12 +72,18 @@ function unidadCantidad(unidad) {
   }
 }
 
-export default function DetalleCalculoTabla({ detalleCalculo, costoTotal, tipoCamion }) {
+const NOMBRE_FUENTE = {
+  GOOGLE_ROUTES_API: 'Google Maps',
+  HAVERSINE_FALLBACK: 'Estimada (linea recta)',
+}
+
+export default function DetalleCalculoTabla({ detalleCalculo, costoTotal, tipoCamion, paradas }) {
   if (!detalleCalculo) return null
   const { metodo, explicacion, variables = {} } = detalleCalculo
   const unidad = variables.unidad
   const valorUnitario = variables.valor_unitario
   const baseCalculo = variables.base_calculo
+  const comp = variables.comparacion_distancia_tiempo
 
   return (
     <div className="detalle-calculo">
@@ -150,6 +156,103 @@ export default function DetalleCalculoTabla({ detalleCalculo, costoTotal, tipoCa
             ))}
           </tbody>
         </table>
+      )}
+
+      {comp && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', margin: '8px 0 4px' }}>
+            Datos importados vs. referencia (Google Maps / estimacion)
+          </div>
+          <table className="detalle-calculo-tabla">
+            <tbody>
+              <tr>
+                <td>Distancia importada</td>
+                <td>{formatoCantidad(comp.distancia_importada_km)} km</td>
+              </tr>
+              <tr>
+                <td>Distancia de referencia{comp.fuentes_referencia?.length ? ` (${comp.fuentes_referencia.map((f) => NOMBRE_FUENTE[f] || f).join(', ')})` : ''}</td>
+                <td>{formatoCantidad(comp.distancia_referencia_km)} km</td>
+              </tr>
+              <tr>
+                <td>Diferencia de distancia</td>
+                <td style={{ color: comp.diferencia_distancia_km === 0 ? '#6b7280' : comp.diferencia_distancia_km > 0 ? '#b91c1c' : '#15803d', fontWeight: 600 }}>
+                  {comp.diferencia_distancia_km > 0 ? '+' : ''}
+                  {formatoCantidad(comp.diferencia_distancia_km)} km
+                </td>
+              </tr>
+              <tr>
+                <td>Tiempo de transito importado</td>
+                <td>{formatoCantidad(comp.tiempo_importado_min)} min</td>
+              </tr>
+              <tr>
+                <td>Tiempo de transito de referencia</td>
+                <td>{formatoCantidad(comp.tiempo_referencia_min)} min</td>
+              </tr>
+              <tr>
+                <td>Diferencia de tiempo</td>
+                <td style={{ color: comp.diferencia_tiempo_min === 0 ? '#6b7280' : comp.diferencia_tiempo_min > 0 ? '#b91c1c' : '#15803d', fontWeight: 600 }}>
+                  {comp.diferencia_tiempo_min > 0 ? '+' : ''}
+                  {formatoCantidad(comp.diferencia_tiempo_min)} min
+                </td>
+              </tr>
+              {comp.costo_con_distancia_referencia !== undefined && (
+                <>
+                  <tr>
+                    <td>Costo con distancia importada</td>
+                    <td>{formatoMoneda(comp.costo_con_distancia_importada)}</td>
+                  </tr>
+                  <tr>
+                    <td>Costo con distancia de referencia</td>
+                    <td>{formatoMoneda(comp.costo_con_distancia_referencia)}</td>
+                  </tr>
+                  <tr>
+                    <td>Diferencia de costo</td>
+                    <td style={{ color: comp.diferencia_costo === 0 ? '#6b7280' : comp.diferencia_costo > 0 ? '#b91c1c' : '#15803d', fontWeight: 600 }}>
+                      {comp.diferencia_costo > 0 ? '+' : ''}
+                      {formatoMoneda(comp.diferencia_costo)}
+                    </td>
+                  </tr>
+                </>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {Array.isArray(paradas) && paradas.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', margin: '8px 0 4px' }}>
+            Detalle por parada: importado vs. referencia
+          </div>
+          <table className="detalle-calculo-tabla">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Cliente</th>
+                <th>Km importado</th>
+                <th>Km referencia</th>
+                <th>Min importado</th>
+                <th>Min referencia</th>
+                <th>Fuente</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...paradas]
+                .sort((a, b) => a.secuencia - b.secuencia)
+                .map((p) => (
+                  <tr key={p.id}>
+                    <td>{p.secuencia}</td>
+                    <td>{p.cliente?.nombre || p.cliente_id}</td>
+                    <td>{formatoCantidad(p.distancia_km_tramo)}</td>
+                    <td>{formatoCantidad(p.distancia_km_tramo_referencia)}</td>
+                    <td>{formatoCantidad(p.tiempo_transito_min_tramo)}</td>
+                    <td>{formatoCantidad(p.tiempo_transito_min_tramo_referencia)}</td>
+                    <td>{NOMBRE_FUENTE[p.fuente_referencia] || p.fuente_referencia || '-'}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

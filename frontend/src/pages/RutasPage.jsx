@@ -204,6 +204,7 @@ export default function RutasPage() {
                             detalleCalculo={rutaExpandidaDetalle.detalle_calculo}
                             costoTotal={rutaExpandidaDetalle.costo_flete_calculado}
                             tipoCamion={rutaExpandidaDetalle.tipo_camion}
+                            paradas={rutaExpandidaDetalle.paradas}
                           />
                         ) : (
                           <p>Cargando detalle...</p>

@@ -264,6 +264,15 @@ class ParadaRuta(Base):
     secuencia = Column(Integer, nullable=False)
     distancia_km_tramo = Column(Float, nullable=False, default=0)
     tiempo_transito_min_tramo = Column(Float, nullable=False, default=0)
+    # v3: distancia/tiempo de REFERENCIA obtenidos siempre del conector de distancia
+    # (Google Routes API o Haversine, ver distance_connector.py), independientemente
+    # de si distancia_km_tramo/tiempo_transito_min_tramo vinieron dados en el JSON de
+    # importacion. Sirven para comparar "lo importado" vs "lo que dice un calculo
+    # objetivo" y asi detectar si una ruta se planifico o ejecuto con datos incorrectos.
+    # No pisan nunca los valores importados.
+    distancia_km_tramo_referencia = Column(Float, nullable=True)
+    tiempo_transito_min_tramo_referencia = Column(Float, nullable=True)
+    fuente_referencia = Column(String(30), nullable=True)  # GOOGLE_ROUTES_API | HAVERSINE_FALLBACK
     tiempo_servicio_min = Column(Float, nullable=False, default=0)
     hora_llegada_estimada = Column(DateTime, nullable=True)
     hora_llegada_real = Column(DateTime, nullable=True)

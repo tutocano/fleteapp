@@ -101,6 +101,7 @@ export default function ConciliacionPage() {
                               detalleCalculo={detalles[r.ruta_planificada_id].plan?.detalle_calculo}
                               costoTotal={detalles[r.ruta_planificada_id].plan?.costo_flete_calculado}
                               tipoCamion={detalles[r.ruta_planificada_id].plan?.tipo_camion}
+                              paradas={detalles[r.ruta_planificada_id].plan?.paradas}
                             />
                           </div>
                           <div style={{ flex: 1, minWidth: 320 }}>
@@ -110,6 +111,7 @@ export default function ConciliacionPage() {
                                 detalleCalculo={detalles[r.ruta_planificada_id].ejec?.detalle_calculo}
                                 costoTotal={detalles[r.ruta_planificada_id].ejec?.costo_flete_calculado}
                                 tipoCamion={detalles[r.ruta_planificada_id].ejec?.tipo_camion}
+                                paradas={detalles[r.ruta_planificada_id].ejec?.paradas}
                               />
                             ) : (
                               <p>Sin ruta ejecutada asociada aun.</p>

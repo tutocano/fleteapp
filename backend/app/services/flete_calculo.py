@@ -41,7 +41,7 @@ def _totales_pedidos(parada: ParadaRuta):
     return peso_total, volumen_total
 
 
-def calcular_costo_ruta(db: Session, ruta: Ruta) -> DetalleCalculo:
+def _calcular_costo_por_metodo(db: Session, ruta: Ruta) -> DetalleCalculo:
     tarifa: TarifaTransportista = ruta.tarifa_transportista
     metodo_codigo = tarifa.metodo_tarifa.codigo
     paradas = sorted(ruta.paradas, key=lambda p: p.secuencia)
@@ -217,6 +217,49 @@ def calcular_costo_ruta(db: Session, ruta: Ruta) -> DetalleCalculo:
         )
 
     raise ValueError(f"Metodo de tarifa no soportado: {metodo_codigo}")
+
+
+def calcular_costo_ruta(db: Session, ruta: Ruta) -> DetalleCalculo:
+    """
+    Calcula el costo segun el metodo de tarifa (_calcular_costo_por_metodo) y le
+    agrega un bloque de COMPARACION entre los datos importados en el JSON de la
+    ruta (distancia_km_tramo / tiempo_transito_min_tramo) y los datos de
+    REFERENCIA obtenidos siempre del conector Google/Haversine
+    (distancia_km_tramo_referencia / tiempo_transito_min_tramo_referencia, ver
+    distance_connector.py). Esto aplica a los 6 metodos de tarifa por igual, ya
+    que sirve para detectar rutas mal planificadas o mal ejecutadas
+    independientemente de si el metodo de tarifa usa la distancia para el costo.
+    Solo POR_KILOMETRO usa la distancia en el costo, asi que es el unico metodo
+    donde ademas se calcula un costo_con_distancia_referencia alterno.
+    """
+    detalle = _calcular_costo_por_metodo(db, ruta)
+    paradas = sorted(ruta.paradas, key=lambda p: p.secuencia)
+
+    distancia_importada_km = sum(p.distancia_km_tramo or 0.0 for p in paradas)
+    distancia_referencia_km = sum(p.distancia_km_tramo_referencia or 0.0 for p in paradas)
+    tiempo_importado_min = sum(p.tiempo_transito_min_tramo or 0.0 for p in paradas)
+    tiempo_referencia_min = sum(p.tiempo_transito_min_tramo_referencia or 0.0 for p in paradas)
+    fuentes_referencia = sorted({p.fuente_referencia for p in paradas if p.fuente_referencia})
+
+    comparacion = {
+        "distancia_importada_km": round(distancia_importada_km, 3),
+        "distancia_referencia_km": round(distancia_referencia_km, 3),
+        "diferencia_distancia_km": round(distancia_referencia_km - distancia_importada_km, 3),
+        "tiempo_importado_min": round(tiempo_importado_min, 2),
+        "tiempo_referencia_min": round(tiempo_referencia_min, 2),
+        "diferencia_tiempo_min": round(tiempo_referencia_min - tiempo_importado_min, 2),
+        "fuentes_referencia": fuentes_referencia,
+    }
+
+    if detalle.metodo == "POR_KILOMETRO":
+        tarifa: TarifaTransportista = ruta.tarifa_transportista
+        costo_con_referencia = round(tarifa.valor_unitario * distancia_referencia_km, 2)
+        comparacion["costo_con_distancia_importada"] = detalle.costo_total
+        comparacion["costo_con_distancia_referencia"] = costo_con_referencia
+        comparacion["diferencia_costo"] = round(costo_con_referencia - detalle.costo_total, 2)
+
+    detalle.variables["comparacion_distancia_tiempo"] = comparacion
+    return detalle
 
 
 def calcular_y_guardar(db: Session, ruta: Ruta) -> DetalleCalculo:

@@ -267,6 +267,10 @@ class ParadaOut(ORMBase):
     secuencia: int
     distancia_km_tramo: float
     tiempo_transito_min_tramo: float
+    # v3: valores de referencia (Google/Haversine), independientes de lo importado.
+    distancia_km_tramo_referencia: Optional[float] = None
+    tiempo_transito_min_tramo_referencia: Optional[float] = None
+    fuente_referencia: Optional[str] = None
     tiempo_servicio_min: float
     hora_llegada_estimada: Optional[datetime] = None
     hora_llegada_real: Optional[datetime] = None

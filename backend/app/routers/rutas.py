@@ -73,14 +73,20 @@ def _importar_ruta(payload: schemas.RutaImport, es_planificada: bool, db: Sessio
 
         distancia_km = parada_in.distancia_km_tramo
         tiempo_min = parada_in.tiempo_transito_min_tramo
-        if distancia_km is None or tiempo_min is None:
-            resultado = calcular_distancia_tiempo(
-                punto_anterior[0], punto_anterior[1], cliente.latitud, cliente.longitud
-            )
-            if distancia_km is None:
-                distancia_km = resultado.distancia_km
-            if tiempo_min is None:
-                tiempo_min = resultado.tiempo_min
+
+        # v3: se llama SIEMPRE al conector de distancia (Google/Haversine), sin
+        # importar si el JSON ya trae distancia_km_tramo/tiempo_transito_min_tramo,
+        # para tener un dato de referencia objetivo con el que comparar lo importado
+        # (permite detectar rutas mal planificadas o mal ejecutadas). Si el JSON no
+        # trae valores, el resultado del conector se usa tambien como valor principal
+        # (comportamiento identico al de v1/v2).
+        resultado_referencia = calcular_distancia_tiempo(
+            punto_anterior[0], punto_anterior[1], cliente.latitud, cliente.longitud
+        )
+        if distancia_km is None:
+            distancia_km = resultado_referencia.distancia_km
+        if tiempo_min is None:
+            tiempo_min = resultado_referencia.tiempo_min
 
         parada = models.ParadaRuta(
             ruta_id=ruta.id,
@@ -88,6 +94,9 @@ def _importar_ruta(payload: schemas.RutaImport, es_planificada: bool, db: Sessio
             secuencia=parada_in.secuencia,
             distancia_km_tramo=distancia_km,
             tiempo_transito_min_tramo=tiempo_min,
+            distancia_km_tramo_referencia=resultado_referencia.distancia_km,
+            tiempo_transito_min_tramo_referencia=resultado_referencia.tiempo_min,
+            fuente_referencia=resultado_referencia.fuente,
             tiempo_servicio_min=parada_in.tiempo_servicio_min,
             hora_llegada_estimada=parada_in.hora_llegada_estimada,
             hora_llegada_real=parada_in.hora_llegada_real,
@@ -206,6 +215,9 @@ def datos_mapa_ruta(ruta_id: int, db: Session = Depends(get_db)):
                 "secuencia": parada.secuencia,
                 "distancia_km_tramo": parada.distancia_km_tramo,
                 "tiempo_transito_min_tramo": parada.tiempo_transito_min_tramo,
+                "distancia_km_tramo_referencia": parada.distancia_km_tramo_referencia,
+                "tiempo_transito_min_tramo_referencia": parada.tiempo_transito_min_tramo_referencia,
+                "fuente_referencia": parada.fuente_referencia,
                 "tiempo_servicio_min": parada.tiempo_servicio_min,
             }
         )

@@ -155,6 +155,10 @@ CREATE TABLE IF NOT EXISTS parada_ruta (
     secuencia INTEGER NOT NULL,
     distancia_km_tramo DOUBLE PRECISION NOT NULL DEFAULT 0,
     tiempo_transito_min_tramo DOUBLE PRECISION NOT NULL DEFAULT 0,
+    -- v3: distancia/tiempo de referencia (Google/Haversine), no pisan lo importado.
+    distancia_km_tramo_referencia DOUBLE PRECISION,
+    tiempo_transito_min_tramo_referencia DOUBLE PRECISION,
+    fuente_referencia VARCHAR(30),
     tiempo_servicio_min DOUBLE PRECISION NOT NULL DEFAULT 0,
     hora_llegada_estimada TIMESTAMP,
     hora_llegada_real TIMESTAMP
