@@ -18,6 +18,13 @@
 # subirla a un plan pago antes de que se borre). Para un ambiente de prueba
 # esto es aceptable, pero si necesitas que los datos persistan mas de ~44 dias
 # sin intervencion, revisa GUIA_DESPLIEGUE_RENDER.md para las opciones.
+#
+# NOTA: este Blueprint NO crea una base de datos nueva porque Render solo
+# permite una base Postgres gratuita activa por cuenta. En su lugar, fleteapp
+# reutiliza una base de datos "flete_db" creada manualmente dentro de un
+# servidor Postgres gratuito ya existente en la cuenta (ver GUIA_DESPLIEGUE_RENDER.md).
+# Por eso DATABASE_URL se ingresa manualmente en el dashboard (sync: false)
+# en vez de generarse automaticamente con `fromDatabase`.
 
 services:
   # ---------- Backend: FastAPI (Docker) ----------
@@ -31,9 +38,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: fleteapp-db
-          property: connectionString
+        sync: false  # pega aqui la connection string de tu Postgres existente + /flete_db
       - key: GOOGLE_MAPS_API_KEY
         sync: false  # se ingresa manualmente en el dashboard de Render (no va en el repo)
       - key: FRONTEND_ORIGINS
@@ -54,10 +59,3 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
-
-databases:
-  # ---------- Base de datos: Postgres gratuita ----------
-  - name: fleteapp-db
-    plan: free
-    databaseName: flete_db
-    user: flete_user
