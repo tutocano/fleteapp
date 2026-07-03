@@ -8,6 +8,7 @@ Matrix API para obtener distancia y tiempo reales. Si la llamada a Google
 falla por cualquier razon (key invalida, sin red, error temporal), se hace
 fallback automatico a Haversine sin romper el calculo.
 """
+import logging
 import math
 import os
 from dataclasses import dataclass
@@ -17,6 +18,8 @@ try:
     import httpx
 except ImportError:  # pragma: no cover
     httpx = None
+
+logger = logging.getLogger("fleteapp.distance_connector")
 
 # Factor de correccion vial: las vias reales no son linea recta.
 # 1.3 es un valor tipico usado en logistica para zonas urbanas.
@@ -74,8 +77,25 @@ def _google_routes_api(lat1: float, lon1: float, lat2: float, lon2: float, api_k
             "travelMode": "DRIVE",
         }
         resp = httpx.post(url, json=payload, headers=headers, timeout=8.0, trust_env=False)
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            # No se relanza la excepcion (el fallback a Haversine debe seguir
+            # funcionando), pero se deja un log claro con la causa real -- sin esto
+            # es imposible saber por que se esta usando el fallback (ver logs del
+            # servicio backend en Render: pestaña "Logs").
+            logger.warning(
+                "Google Routes API fallo (HTTP %s): %s. Usando fallback Haversine.",
+                resp.status_code,
+                resp.text[:500],
+            )
+            return None
         data = resp.json()
+        if "routes" not in data or not data["routes"]:
+            logger.warning(
+                "Google Routes API respondio sin 'routes' (revisa el X-Goog-FieldMask "
+                "o si el origen/destino son validos): %s. Usando fallback Haversine.",
+                data,
+            )
+            return None
         route = data["routes"][0]
         distancia_km = route["distanceMeters"] / 1000.0
         duration_str = route["duration"]  # ej "1234s"
@@ -86,7 +106,8 @@ def _google_routes_api(lat1: float, lon1: float, lat2: float, lon2: float, api_k
             tiempo_min=round(tiempo_min, 2),
             fuente="GOOGLE_ROUTES_API",
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning("Google Routes API fallo con excepcion: %r. Usando fallback Haversine.", exc)
         return None
 
 
